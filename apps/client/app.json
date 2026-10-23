@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Tata Dakar",
+    "slug": "tata-dakar",
+    "scheme": "tata-dakar",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.tatadakar.routefinder"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-localization",
+        {
+          "supportedLocales": ["fr", "en"]
+        }
+      ],
+      "@maplibre/maplibre-react-native"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

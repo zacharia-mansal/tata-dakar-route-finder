@@ -1,0 +1,8 @@
+{
+  "name": "dakar-tata-route-finder",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
