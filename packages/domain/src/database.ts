@@ -132,4 +132,3 @@ export interface Database {
     CompositeTypes: Record<string, never>;
   };
 }
-

@@ -34,6 +34,32 @@ describe('Neon workflow security and reliability', () => {
     for (const action of uses) {
       expect(action).toMatch(/^[^@]+@(?:[0-9a-f]{40}|v\d+\.\d+\.\d+)(?:\s+#.*)?$/i);
     }
+
+    expect(uses.filter((action) => action === 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413').length).toBe(2);
+    expect(uses).toContain('neondatabase/create-branch-action@153375631fc0f99cf0113e0cef877850452e6ca2');
+    expect(uses).toContain('neondatabase/delete-branch-action@f76e64adf2bfc40935a6027026d24ac78a3072e6');
+    expect(uses).toContain('actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683');
+    expect(uses).toContain('actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020');
+  });
+
+  it('uses the documented pinned action inputs and outputs', () => {
+    const allSteps = Object.values(workflow.jobs).flatMap((job) => job.steps ?? []);
+    const pnpmSteps = allSteps.filter((step) => step.uses?.startsWith('pnpm/action-setup@'));
+    const createBranch = workflow.jobs['neon-db'].steps.find((step) => step.id === 'neon');
+    const deleteBranch = workflow.jobs['neon-db'].steps.find((step) => step.name?.includes('Delete temporary Neon branch'));
+
+    expect(pnpmSteps).toHaveLength(2);
+    expect(pnpmSteps.every((step) => !Object.hasOwn(step.with ?? {}, 'version'))).toBe(true);
+    expect(createBranch.with).toMatchObject({
+      project_id: '${{ secrets.NEON_PROJECT_ID }}',
+      api_key: '${{ secrets.NEON_API_KEY }}',
+      branch_type: 'schema-only',
+      ssl: 'require',
+    });
+    expect(createBranch.with).not.toHaveProperty('expires_at');
+    expect(deleteBranch.with.branch_id).toBe('${{ steps.neon.outputs.branch_id }}');
+    expect(deleteBranch.with).not.toHaveProperty('branch');
+    expect(workflow.jobs['neon-db'].steps.some((step) => step.env?.DATABASE_URL === '${{ steps.neon.outputs.db_url }}')).toBe(true);
   });
 
   it('uses minimal permissions, per-PR concurrency, and job timeouts', () => {
@@ -60,9 +86,10 @@ describe('Neon workflow security and reliability', () => {
     expect(maskIndex).toBeGreaterThan(-1);
     expect(databaseStepIndexes.length).toBeGreaterThan(0);
     expect(databaseStepIndexes.every((index) => index > maskIndex)).toBe(true);
-    expect(steps.some((step) => step.env?.['DATABASE' + '_URL'] === '${{ steps.neon.outputs.db_url_pooled }}')).toBe(false);
+    expect(steps.some((step) => step.env?.DATABASE_URL === '${{ steps.neon.outputs.db_url_with_pooler }}')).toBe(false);
     expect(deleteStep.if).toMatch(/always\(\).*steps\.neon\.outputs\.branch_id/);
-    expect(deleteStep.with.branch).toBe('${{ steps.neon.outputs.branch_id }}');
+    expect(deleteStep.with.branch_id).toBe('${{ steps.neon.outputs.branch_id }}');
+    expect(deleteStep.with).not.toHaveProperty('branch');
 
     const rollbackIndex = steps.findIndex((step) => step.name?.includes('Roll back temporary branch'));
     const validateIndex = steps.findIndex((step) => step.name?.includes('Apply migrations, seeds, and pgTAP tests'));
@@ -113,8 +140,11 @@ describe('repository hygiene and lockfile consistency', () => {
     }
 
     const tracked = execFileSync('git', ['ls-files'], { cwd: projectRoot, encoding: 'utf8' });
-    expect(tracked).not.toMatch(/(?:^|\/)\.env(?:\.|$)/m);
-    expect(tracked).not.toContain('.pnpm-store/');
+    const trackedPaths = tracked.split(/\r?\n/).filter(Boolean);
+    const trackedLocalEnvFiles = trackedPaths.filter((filePath) => /(?:^|\/)\.env(?:\.[^/]+)?$/.test(filePath)
+      && filePath !== '.env.example');
+    expect(trackedLocalEnvFiles).toEqual([]);
+    expect(trackedPaths.some((filePath) => filePath.includes('.pnpm-store/'))).toBe(false);
   });
 
   it('keeps the tracked environment template free of a populated database URL', () => {

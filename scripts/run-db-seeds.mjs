@@ -19,7 +19,7 @@ export function getSeedCommand(databaseUrl, seedFile) {
     throw new Error('DATABASE_URL must be a PostgreSQL connection URL.');
   }
 
-  if (!['postgres:', 'postgresql:'].includes(parsedDatabaseUrl.protocol)) {
+  if (!['postgres:', 'postgresql:'].includes(parsedDatabaseUrl.protocol) || !parsedDatabaseUrl.hostname) {
     throw new Error('DATABASE_URL must be a PostgreSQL connection URL.');
   }
 

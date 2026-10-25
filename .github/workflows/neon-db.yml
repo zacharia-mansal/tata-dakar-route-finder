@@ -24,9 +24,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@fe02b34f77f9bc84e2246cbd1c7ee78d366e90a # v4.1.0
-        with:
-          version: 11.25.0
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -82,9 +80,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@fe02b34f77f9bc84e2246cbd1c7ee78d366e90a # v4.1.0
-        with:
-          version: 11.25.0
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -114,20 +110,14 @@ jobs:
             exit 1
           fi
 
-      - name: Set temporary branch expiration
-        id: expiry
-        shell: bash
-        run: echo "expires_at=$(date -u --date '+1 day' +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
-
       - name: Create temporary Neon schema branch
         id: neon
-        uses: neondatabase/create-branch-action@v6.0.0
+        uses: neondatabase/create-branch-action@153375631fc0f99cf0113e0cef877850452e6ca2 # v6.0.0
         with:
           project_id: ${{ secrets.NEON_PROJECT_ID }}
           api_key: ${{ secrets.NEON_API_KEY }}
           branch_name: tata-ci-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}
           branch_type: schema-only
-          expires_at: ${{ steps.expiry.outputs.expires_at }}
           ssl: require
 
       - name: Mask generated Neon connection URL (direct)
@@ -157,8 +147,8 @@ jobs:
 
       - name: Delete temporary Neon branch
         if: always() && steps.neon.outputs.branch_id != ''
-        uses: neondatabase/delete-branch-action@v3.0.0
+        uses: neondatabase/delete-branch-action@f76e64adf2bfc40935a6027026d24ac78a3072e6 # v3.0.0
         with:
           project_id: ${{ secrets.NEON_PROJECT_ID }}
           api_key: ${{ secrets.NEON_API_KEY }}
-          branch: ${{ steps.neon.outputs.branch_id }}
+          branch_id: ${{ steps.neon.outputs.branch_id }}

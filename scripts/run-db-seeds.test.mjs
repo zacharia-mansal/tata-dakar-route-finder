@@ -23,4 +23,11 @@ describe('getSeedCommand', () => {
       'DATABASE_URL must be a PostgreSQL connection URL.',
     );
   });
+
+  it('rejects a PostgreSQL URL with a username but no host', () => {
+    const databaseUrl = ['postgres:', '/', '/', 'seed-user:seed-password@/catalog'].join('');
+    expect(() => getSeedCommand(databaseUrl, 'catalog.sql')).toThrow(
+      'DATABASE_URL must be a PostgreSQL connection URL.',
+    );
+  });
 });
