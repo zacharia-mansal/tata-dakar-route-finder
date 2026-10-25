@@ -5,3 +5,5 @@ dist/
 coverage/
 .tmp/
 .superpowers/sdd/
+.env*
+!.env.example
