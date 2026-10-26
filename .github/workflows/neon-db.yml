@@ -147,7 +147,7 @@ jobs:
 
       - name: Delete temporary Neon branch
         if: always() && steps.neon.outputs.branch_id != ''
-        continue-on-error: ${{ failure() }}
+        continue-on-error: ${{ job.status == 'failure' }}
         env:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}

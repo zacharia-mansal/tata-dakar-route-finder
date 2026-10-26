@@ -3,10 +3,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { load } from 'js-yaml';
 
-const workflow = load(readFileSync(
+const workflowSource = readFileSync(
   new URL('../.github/workflows/neon-db.yml', import.meta.url),
   'utf8',
-));
+);
+const workflow = load(workflowSource);
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const dbTestRunner = readFileSync(new URL('./run-db-tests.mjs', import.meta.url), 'utf8');
 const postgresConnection = readFileSync(new URL('./postgres-connection.mjs', import.meta.url), 'utf8');
@@ -15,6 +16,45 @@ const firstRunChecklist = readFileSync(new URL('../docs/ci-first-run-checklist.m
 const projectRoot = new URL('..', import.meta.url);
 
 describe('Neon workflow security and reliability', () => {
+  it('parses valid YAML and keeps status functions and step references in valid contexts', () => {
+    const parsedWorkflow = load(workflowSource);
+    const misplacedStatusFunctions = [];
+    const missingStepReferences = [];
+
+    const visitStrings = (value, path, onString) => {
+      if (typeof value === 'string') {
+        onString(value, path);
+      } else if (Array.isArray(value)) {
+        value.forEach((item, index) => visitStrings(item, `${path}[${index}]`, onString));
+      } else if (value && typeof value === 'object') {
+        for (const [key, child] of Object.entries(value)) {
+          visitStrings(child, path ? `${path}.${key}` : key, onString);
+        }
+      }
+    };
+
+    visitStrings(parsedWorkflow, '', (value, path) => {
+      if (/\b(?:always|cancelled|success|failure)\s*\(/.test(value) && !path.endsWith('.if')) {
+        misplacedStatusFunctions.push(path);
+      }
+    });
+
+    for (const [jobId, job] of Object.entries(parsedWorkflow.jobs)) {
+      const stepIds = (job.steps ?? []).map((step) => step.id).filter(Boolean);
+      expect(new Set(stepIds).size, `step ids must be unique in job ${jobId}`).toBe(stepIds.length);
+      const knownStepIds = new Set(stepIds);
+
+      visitStrings(job, `jobs.${jobId}`, (value, path) => {
+        for (const match of value.matchAll(/\bsteps\.([A-Za-z_][A-Za-z0-9_-]*)\./g)) {
+          if (!knownStepIds.has(match[1])) missingStepReferences.push(`${path}: ${match[1]}`);
+        }
+      });
+    }
+
+    expect(misplacedStatusFunctions).toEqual([]);
+    expect(missingStepReferences).toEqual([]);
+  });
+
   it('runs on pull_request only and explicitly marks fork database validation as skipped', () => {
     expect(workflow.on.pull_request).toBeTruthy();
     expect(workflow.on.pull_request_target).toBeUndefined();
@@ -99,7 +139,7 @@ describe('Neon workflow security and reliability', () => {
     expect(steps.some((step) => step.env?.DATABASE_URL === '${{ steps.neon.outputs.db_url_with_pooler }}')).toBe(false);
     expect(deleteStep.if).toMatch(/always\(\).*steps\.neon\.outputs\.branch_id/);
     expect(deleteStep.env.NEON_BRANCH_ID).toBe('${{ steps.neon.outputs.branch_id }}');
-    expect(deleteStep['continue-on-error']).toBe('${{ failure() }}');
+    expect(deleteStep['continue-on-error']).toBe("${{ job.status == 'failure' }}");
     expect(deleteStep.run).toMatch(/if \(!branchId\) process\.exit\(0\)/);
 
     const rollbackIndex = steps.findIndex((step) => step.name?.includes('Roll back temporary branch'));
