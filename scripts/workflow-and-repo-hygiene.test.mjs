@@ -9,6 +9,7 @@ const workflow = load(readFileSync(
 ));
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const dbTestRunner = readFileSync(new URL('./run-db-tests.mjs', import.meta.url), 'utf8');
+const postgresConnection = readFileSync(new URL('./postgres-connection.mjs', import.meta.url), 'utf8');
 const envExample = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 const firstRunChecklist = readFileSync(new URL('../docs/ci-first-run-checklist.md', import.meta.url), 'utf8');
 const projectRoot = new URL('..', import.meta.url);
@@ -24,7 +25,7 @@ describe('Neon workflow security and reliability', () => {
     expect(workflow.jobs['neon-db-fork'].steps.every((step) => !step.env?.NEON_API_KEY && !step.env?.NEON_PROJECT_ID)).toBe(true);
   });
 
-  it('pins each external action to a full commit SHA or an exact semantic version', () => {
+  it('pins each remaining external action to a 40-character commit SHA', () => {
     const uses = Object.values(workflow.jobs)
       .flatMap((job) => job.steps ?? [])
       .filter((step) => step.uses)
@@ -32,12 +33,12 @@ describe('Neon workflow security and reliability', () => {
 
     expect(uses.length).toBeGreaterThan(0);
     for (const action of uses) {
-      expect(action).toMatch(/^[^@]+@(?:[0-9a-f]{40}|v\d+\.\d+\.\d+)(?:\s+#.*)?$/i);
+      expect(action).toMatch(/^[^@]+@[0-9a-f]{40}(?:\s+#.*)?$/i);
     }
 
     expect(uses.filter((action) => action === 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413').length).toBe(2);
     expect(uses).toContain('neondatabase/create-branch-action@153375631fc0f99cf0113e0cef877850452e6ca2');
-    expect(uses).toContain('neondatabase/delete-branch-action@f76e64adf2bfc40935a6027026d24ac78a3072e6');
+    expect(uses.some((action) => action.startsWith('neondatabase/delete-branch-action@'))).toBe(false);
     expect(uses).toContain('actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683');
     expect(uses).toContain('actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020');
   });
@@ -57,8 +58,17 @@ describe('Neon workflow security and reliability', () => {
       ssl: 'require',
     });
     expect(createBranch.with).not.toHaveProperty('expires_at');
-    expect(deleteBranch.with.branch_id).toBe('${{ steps.neon.outputs.branch_id }}');
-    expect(deleteBranch.with).not.toHaveProperty('branch');
+    expect(deleteBranch.env.NEON_BRANCH_ID).toBe('${{ steps.neon.outputs.branch_id }}');
+    expect(deleteBranch.env.NEON_API_KEY).toBe('${{ secrets.NEON_API_KEY }}');
+    expect(deleteBranch.env.NEON_PROJECT_ID).toBe('${{ secrets.NEON_PROJECT_ID }}');
+    expect(deleteBranch.run).toMatch(/method:\s*'DELETE'/);
+    expect(deleteBranch.run).toMatch(/https:\/\/console\.neon\.tech\/api\/v2\/projects\/\$\{encodeURIComponent\(projectId\)\}\/branches\/\$\{encodeURIComponent\(branchId\)\}/);
+    expect(deleteBranch.run).toMatch(/authorization:\s*`Bearer \$\{apiKey\}`/i);
+    expect(deleteBranch.run).toMatch(/response\.status\s*!==\s*200/);
+    expect(deleteBranch.run).not.toMatch(/\b204\b/);
+    expect(deleteBranch.run).not.toContain('${{ secrets.NEON_API_KEY }}');
+    expect(deleteBranch.run).not.toMatch(/console\.log|console\.error\(.*apiKey/i);
+    expect(deleteBranch).not.toHaveProperty('uses');
     expect(workflow.jobs['neon-db'].steps.some((step) => step.env?.DATABASE_URL === '${{ steps.neon.outputs.db_url }}')).toBe(true);
   });
 
@@ -88,13 +98,19 @@ describe('Neon workflow security and reliability', () => {
     expect(databaseStepIndexes.every((index) => index > maskIndex)).toBe(true);
     expect(steps.some((step) => step.env?.DATABASE_URL === '${{ steps.neon.outputs.db_url_with_pooler }}')).toBe(false);
     expect(deleteStep.if).toMatch(/always\(\).*steps\.neon\.outputs\.branch_id/);
-    expect(deleteStep.with.branch_id).toBe('${{ steps.neon.outputs.branch_id }}');
-    expect(deleteStep.with).not.toHaveProperty('branch');
+    expect(deleteStep.env.NEON_BRANCH_ID).toBe('${{ steps.neon.outputs.branch_id }}');
+    expect(deleteStep['continue-on-error']).toBe('${{ failure() }}');
+    expect(deleteStep.run).toMatch(/if \(!branchId\) process\.exit\(0\)/);
 
     const rollbackIndex = steps.findIndex((step) => step.name?.includes('Roll back temporary branch'));
     const validateIndex = steps.findIndex((step) => step.name?.includes('Apply migrations, seeds, and pgTAP tests'));
     expect(rollbackIndex).toBeGreaterThan(validateIndex);
     expect(steps[rollbackIndex].run).toMatch(/pnpm db:rollback[\s\S]*pnpm db:validate/);
+    expect(steps[rollbackIndex].env.DATABASE_URL).toBe('${{ steps.neon.outputs.db_url }}');
+
+    const databaseSteps = steps.filter((step) => /pnpm db:(?:status|migrate|seed|test|validate|rollback)/.test(step.run ?? ''));
+    expect(databaseSteps.length).toBe(3);
+    expect(databaseSteps.every((step) => step.env?.DATABASE_URL === '${{ steps.neon.outputs.db_url }}')).toBe(true);
   });
 
   it('documents exact GitHub secret names and direct versus pooled connection usage', () => {
@@ -115,7 +131,11 @@ describe('Neon workflow security and reliability', () => {
 
   it('does not pass ambient secret environment variables to pg_prove', () => {
     expect(dbTestRunner).not.toMatch(/\.\.\.process\.env/);
-    expect(dbTestRunner).toMatch(/PGDATABASE:\s*databaseUrl/);
+    expect(dbTestRunner).toContain('getLibpqConnectionEnvironment');
+    expect(postgresConnection).toMatch(/PGDATABASE:\s*database/);
+    expect(postgresConnection).toMatch(/PGHOST:\s*host\.replace/);
+    expect(postgresConnection).toMatch(/PGPASSWORD/);
+    expect(postgresConnection).toMatch(/PGSSLMODE/);
   });
 
   it('documents the Neon first-run checklist and the exact local push command', () => {

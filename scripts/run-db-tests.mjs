@@ -3,6 +3,10 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join } from 'node:path';
 import {
+  getLibpqConnectionEnvironment,
+  getLibpqProcessEnvironment,
+} from './postgres-connection.mjs';
+import {
   extractExpectedPlanCount,
   formatPgTapSummary,
   summarizePgTapOutput,
@@ -10,63 +14,54 @@ import {
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-try {
-  process.loadEnvFile(join(projectRoot, '.env'));
-} catch (error) {
-  if (error.code !== 'ENOENT') {
-    console.error('Could not load the local environment file.');
-    process.exit(1);
-  }
+/**
+ * Build a pg_prove invocation that uses libpq environment variables and never
+ * puts a database connection URI in process arguments or child environment.
+ *
+ * @param {string | undefined} databaseUrl
+ * @param {string} testFile
+ * @returns {{ args: string[], env: Record<string, string> }}
+ */
+export function getPgProveCommand(databaseUrl, testFile) {
+  const connectionEnvironment = getLibpqConnectionEnvironment(
+    databaseUrl,
+    'DATABASE_URL is required for pgTAP validation.',
+  );
+  return {
+    args: ['--verbose', testFile],
+    env: getLibpqProcessEnvironment(connectionEnvironment),
+  };
 }
 
-const databaseUrl = process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  console.error('DATABASE_URL is required for pgTAP validation.');
-  process.exit(1);
-}
-
-let parsedDatabaseUrl;
-try {
-  parsedDatabaseUrl = new URL(databaseUrl);
-} catch {
-  console.error('DATABASE_URL must be a PostgreSQL connection URL.');
-  process.exit(1);
-}
-
-if (!['postgres:', 'postgresql:'].includes(parsedDatabaseUrl.protocol)) {
-  console.error('DATABASE_URL must use the postgres:// or postgresql:// scheme.');
-  process.exit(1);
-}
-
-const testDirectory = join(projectRoot, 'db', 'tests');
-const testFiles = (await readdir(testDirectory))
-  .filter((file) => file.endsWith('.sql'))
-  .sort()
-  .map((file) => join(testDirectory, file));
-
-if (testFiles.length === 0) {
-  console.error('No pgTAP SQL tests found in db/tests.');
-  process.exit(1);
-}
-
-function redactPgProveOutput(output) {
-  return output
-    .replaceAll(databaseUrl, '[redacted database connection]')
+/**
+ * Redact connection URIs and password assignments from pg_prove diagnostics.
+ *
+ * @param {string} output
+ * @param {string} [databaseUrl]
+ * @returns {string}
+ */
+export function redactPgProveOutput(output, databaseUrl) {
+  const redactedOutput = databaseUrl
+    ? output.replaceAll(databaseUrl, '[redacted database connection]')
+    : output;
+  return redactedOutput
     .replace(/(?:postgres|postgresql):\/\/[^\s"'<>]+/gi, '[redacted database connection]')
     .replace(/\b(password|passwd|pwd)\b\s*[=:]\s*[^\s,;]+/gi, '$1=[redacted]');
 }
 
-function runPgProve(testFile) {
+function runPgProve(testFile, databaseUrl) {
   return new Promise((resolve) => {
-    const childEnv = { PATH: process.env.PATH ?? '', PGDATABASE: databaseUrl };
-    for (const key of ['SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'PERL5LIB']) {
-      if (process.env[key]) childEnv[key] = process.env[key];
+    let command;
+    try {
+      command = getPgProveCommand(databaseUrl, testFile);
+    } catch (error) {
+      resolve({ code: 1, signal: null, launchErrorCode: null, validationError: error.message, output: '' });
+      return;
     }
 
-    const child = crossSpawn('pg_prove', ['--verbose', testFile], {
+    const child = crossSpawn('pg_prove', command.args, {
       cwd: projectRoot,
-      env: childEnv,
+      env: command.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -75,7 +70,7 @@ function runPgProve(testFile) {
     const finish = (result) => {
       if (finished) return;
       finished = true;
-      resolve({ ...result, output: redactPgProveOutput(output) });
+      resolve({ ...result, output: redactPgProveOutput(output, databaseUrl) });
     };
 
     child.stdout.on('data', (chunk) => { output += chunk.toString(); });
@@ -85,40 +80,83 @@ function runPgProve(testFile) {
   });
 }
 
-for (const testFile of testFiles) {
-  const fileName = basename(testFile);
-  let expected;
-
+async function runCli() {
   try {
-    expected = extractExpectedPlanCount(await readFile(testFile, 'utf8'));
+    process.loadEnvFile(join(projectRoot, '.env'));
   } catch (error) {
-    console.error(`Could not read the pgTAP plan in ${fileName}: ${error.message}`);
-    process.exitCode = 1;
-    continue;
+    if (error.code !== 'ENOENT') {
+      console.error('Could not load the local environment file.');
+      process.exitCode = 1;
+      return;
+    }
   }
 
-  const result = await runPgProve(testFile);
-
-  if (result.launchErrorCode === 'ENOENT') {
-    console.error('pg_prove was not found. Install pgTAP client tools and PostgreSQL psql first.');
+  const databaseUrl = process.env.DATABASE_URL;
+  try {
+    getLibpqConnectionEnvironment(databaseUrl, 'DATABASE_URL is required for pgTAP validation.');
+  } catch (error) {
+    console.error(error.message);
     process.exitCode = 1;
-    continue;
+    return;
   }
 
-  if (result.launchErrorCode) {
-    console.error(`Could not start pg_prove (process error ${result.launchErrorCode}).`);
+  const testDirectory = join(projectRoot, 'db', 'tests');
+  const testFiles = (await readdir(testDirectory))
+    .filter((file) => file.endsWith('.sql'))
+    .sort()
+    .map((file) => join(testDirectory, file));
+
+  if (testFiles.length === 0) {
+    console.error('No pgTAP SQL tests found in db/tests.');
     process.exitCode = 1;
-    continue;
+    return;
   }
 
-  const report = summarizePgTapOutput(result.output, expected);
-  console.log(formatPgTapSummary(fileName, report));
+  for (const testFile of testFiles) {
+    const fileName = basename(testFile);
+    let expected;
 
-  if (result.signal || result.code !== 0 || !report.consistent) {
-    if (result.signal) console.error(`pg_prove stopped with signal ${result.signal}.`);
-    if (result.code !== 0) console.error(`pg_prove exited with status ${result.code}.`);
-    if (!report.consistent) console.error(`pgTAP plan mismatch in ${fileName}.`);
-    if (result.output.trim()) console.error(result.output);
-    process.exitCode = 1;
+    try {
+      expected = extractExpectedPlanCount(await readFile(testFile, 'utf8'));
+    } catch (error) {
+      console.error(`Could not read the pgTAP plan in ${fileName}: ${error.message}`);
+      process.exitCode = 1;
+      continue;
+    }
+
+    const result = await runPgProve(testFile, databaseUrl);
+
+    if (result.validationError) {
+      console.error(result.validationError);
+      process.exitCode = 1;
+      continue;
+    }
+
+    if (result.launchErrorCode === 'ENOENT') {
+      console.error('pg_prove was not found. Install pgTAP client tools and PostgreSQL psql first.');
+      process.exitCode = 1;
+      continue;
+    }
+
+    if (result.launchErrorCode) {
+      console.error(`Could not start pg_prove (process error ${result.launchErrorCode}).`);
+      process.exitCode = 1;
+      continue;
+    }
+
+    const report = summarizePgTapOutput(result.output, expected);
+    console.log(formatPgTapSummary(fileName, report));
+
+    if (result.signal || result.code !== 0 || !report.consistent) {
+      if (result.signal) console.error(`pg_prove stopped with signal ${result.signal}.`);
+      if (result.code !== 0) console.error(`pg_prove exited with status ${result.code}.`);
+      if (!report.consistent) console.error(`pgTAP plan mismatch in ${fileName}.`);
+      if (result.output.trim()) console.error(result.output);
+      process.exitCode = 1;
+    }
   }
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  await runCli();
 }

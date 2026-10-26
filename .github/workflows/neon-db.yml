@@ -147,8 +147,39 @@ jobs:
 
       - name: Delete temporary Neon branch
         if: always() && steps.neon.outputs.branch_id != ''
-        uses: neondatabase/delete-branch-action@f76e64adf2bfc40935a6027026d24ac78a3072e6 # v3.0.0
-        with:
-          project_id: ${{ secrets.NEON_PROJECT_ID }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-          branch_id: ${{ steps.neon.outputs.branch_id }}
+        continue-on-error: ${{ failure() }}
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ steps.neon.outputs.branch_id }}
+        run: |
+          set +x
+          node --input-type=module <<'NODE'
+          const { NEON_API_KEY: apiKey, NEON_PROJECT_ID: projectId, NEON_BRANCH_ID: branchId } = process.env;
+          if (!branchId) process.exit(0);
+          if (!apiKey || !projectId) {
+            console.error('Neon temporary branch cleanup could not run because required environment variables are missing.');
+            process.exit(1);
+          }
+
+          const url = `https://console.neon.tech/api/v2/projects/${encodeURIComponent(projectId)}/branches/${encodeURIComponent(branchId)}`;
+          let response;
+          try {
+            response = await fetch(url, {
+              method: 'DELETE',
+              headers: {
+                accept: 'application/json',
+                authorization: `Bearer ${apiKey}`,
+              },
+              signal: AbortSignal.timeout(20000),
+            });
+          } catch {
+            console.error('Neon temporary branch cleanup request failed before receiving a response.');
+            process.exit(1);
+          }
+
+          if (response.status !== 200) {
+            console.error(`Neon temporary branch cleanup failed with HTTP status ${response.status}.`);
+            process.exit(1);
+          }
+          NODE

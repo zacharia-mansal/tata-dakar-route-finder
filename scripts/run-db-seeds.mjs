@@ -1,31 +1,21 @@
 import crossSpawn from 'cross-spawn';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { getLibpqConnectionEnvironment, getLibpqProcessEnvironment } from './postgres-connection.mjs';
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
- * Build a psql invocation without placing the database URL in its argument list.
+ * Build a psql invocation without placing the database URL in its arguments or environment.
  *
  * @param {string} databaseUrl
  * @param {string} seedFile
- * @returns {{ args: string[], env: { PGDATABASE: string } }}
+ * @returns {{ args: string[], env: Record<string, string> }}
  */
 export function getSeedCommand(databaseUrl, seedFile) {
-  let parsedDatabaseUrl;
-  try {
-    parsedDatabaseUrl = new URL(databaseUrl);
-  } catch {
-    throw new Error('DATABASE_URL must be a PostgreSQL connection URL.');
-  }
-
-  if (!['postgres:', 'postgresql:'].includes(parsedDatabaseUrl.protocol) || !parsedDatabaseUrl.hostname) {
-    throw new Error('DATABASE_URL must be a PostgreSQL connection URL.');
-  }
-
   return {
     args: ['--no-psqlrc', '--set', 'ON_ERROR_STOP=1', '--file', seedFile],
-    env: { PGDATABASE: databaseUrl },
+    env: getLibpqConnectionEnvironment(databaseUrl, 'DATABASE_URL is required to apply database seeds.'),
   };
 }
 
@@ -54,7 +44,7 @@ async function runCli() {
 
   const child = crossSpawn('psql', command.args, {
     cwd: projectRoot,
-    env: { ...process.env, ...command.env },
+    env: getLibpqProcessEnvironment(command.env),
     stdio: 'inherit',
   });
 
