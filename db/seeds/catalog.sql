@@ -1,0 +1,2 @@
+-- Transit routes are intentionally not seeded until their stops, directions,
+-- receiver wording, and source evidence have been verified in the field.

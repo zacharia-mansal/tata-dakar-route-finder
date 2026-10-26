@@ -4,5 +4,18 @@
   "packageManager": "pnpm@11.25.0",
   "engines": {
     "node": ">=22.13.0"
+  },
+  "scripts": {
+    "db:status": "dbmate --migrations-dir db/migrations --schema-file db/schema.sql status",
+    "db:migrate": "dbmate --migrations-dir db/migrations --schema-file db/schema.sql --migration-lock up",
+    "db:rollback": "dbmate --migrations-dir db/migrations --schema-file db/schema.sql --migration-lock rollback",
+    "db:seed": "node scripts/run-db-seeds.mjs",
+    "db:test": "node scripts/run-db-tests.mjs",
+    "db:validate": "pnpm db:migrate && pnpm db:seed && pnpm db:test",
+    "check:client-secrets": "node scripts/check-client-secrets.mjs"
+  },
+  "devDependencies": {
+    "cross-spawn": "^7.0.6",
+    "js-yaml": "4.3.2"
   }
 }
