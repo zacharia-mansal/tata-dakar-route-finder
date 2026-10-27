@@ -7,3 +7,4 @@ coverage/
 .superpowers/sdd/
 .env*
 !.env.example
+graphify-out/
