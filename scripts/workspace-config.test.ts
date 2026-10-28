@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const apiDirectory = fileURLToPath(new URL('..', import.meta.url));
+const apiDirectory = fileURLToPath(new URL('../apps/api', import.meta.url));
 
 describe('API workspace typecheck setup', () => {
   it('inherits the strict base config and uses root tools without adding dependencies', () => {
