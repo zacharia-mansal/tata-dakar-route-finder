@@ -196,4 +196,45 @@ describe('findJourneys', () => {
     expect(results).toHaveLength(4);
     expect(results.some((journey) => journey.transferCount > 0)).toBe(false);
   });
+
+  it('excludes destination-walk at maxResults=4 only because the ranked list is truncated', () => {
+    const nearDestination = stop('near-destination', 'Université', 14.6955, -17.463);
+    const fartherDestination = stop('farther-destination', 'Université', 14.694, -17.463);
+    const extra = stop('extra', 'Liberté', 14.715, -17.455);
+    const offsetBoarding = stop('offset-boarding', 'Castor proche', 14.706, -17.451);
+    const transferA = stop('transfer-a', 'Castor', 14.707, -17.451);
+    const transferB = stop('transfer-b', 'Castor', 14.7075, -17.451);
+    const fewestWalk = direction('fewest-walk', '24', 'Marche la plus courte', 'Université', 'Question 24', [castor, nearDestination]);
+    const moreStops = direction('more-stops', '25', 'Même marche, plus d’arrêts', 'Université', 'Question 25', [castor, extra, nearDestination]);
+    const originWalk = direction('origin-walk', '26', 'Marche départ plus longue', 'Université', 'Question 26', [offsetBoarding, nearDestination]);
+    const destinationWalk = direction('destination-walk', '27', 'Marche destination plus longue', 'Université', 'Question 27', [castor, fartherDestination]);
+    const transferFirst = direction('transfer-first', '28', 'Vers correspondance', 'Castor', 'Question Castor', [castor, transferA]);
+    const transferLast = direction('transfer-last', '29', 'Correspondance vers Université', 'Université', 'Question 29', [transferB, nearDestination]);
+    const network: TransitNetwork = {
+      directions: [fewestWalk, moreStops, originWalk, destinationWalk, transferFirst, transferLast],
+      stops: [castor, nearDestination, fartherDestination, extra, offsetBoarding, transferA, transferB],
+      servedPlaces: [fewestWalk, moreStops, originWalk, destinationWalk, transferLast].map((item) => ({
+        placeId: 'ism', areaName: 'Université', directionId: item.id,
+        alightingStopId: item.stops[item.stops.length - 1].id, verifiedAt: '2026-10-22T12:00:00.000Z',
+      })),
+    };
+    const commonLimits = { ...limits, maxTransfers: 1 };
+
+    const fourResults = findJourneys(network, input, { ...commonLimits, maxResults: 4 });
+    const fiveResults = findJourneys(network, input, { ...commonLimits, maxResults: 5 });
+
+    expect(fourResults.map((journey) => journey.legs.map(({ directionId }) => directionId))).toEqual([
+      ['fewest-walk'],
+      ['more-stops'],
+      ['transfer-last'],
+      ['origin-walk'],
+    ]);
+    expect(fiveResults.map((journey) => journey.legs.map(({ directionId }) => directionId))).toEqual([
+      ['fewest-walk'],
+      ['more-stops'],
+      ['transfer-last'],
+      ['origin-walk'],
+      ['destination-walk'],
+    ]);
+  });
 });
