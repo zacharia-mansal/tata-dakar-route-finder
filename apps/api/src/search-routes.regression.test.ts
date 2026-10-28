@@ -11,12 +11,34 @@ const originPlace = {
   id: 'castor', displayName: 'Castor', areaName: 'SICAP',
   coordinates: { lat: 14.707, lon: -17.451 }, source: 'catalogue' as const,
 };
+const publishedOrigin = {
+  ...originPlace,
+  placeId: originPlace.id,
+  aliases: ['Castor stop'],
+  directionId: 'direction-24-out',
+  alightingStopId: 'castor-stop',
+  verifiedAt: '2026-10-22T12:00:00.000Z',
+};
+const publishedDestination = {
+  ...destination,
+  placeId: destination.id,
+  aliases: ['ISM'],
+  directionId: 'direction-24-out',
+  alightingStopId: 'university',
+  verifiedAt: '2026-10-22T12:00:00.000Z',
+};
+const publishedSnapshot = {
+  directions: [],
+  stops: [],
+  servedPlaces: [publishedOrigin, publishedDestination],
+};
 
 type ResolvePlaces = Parameters<typeof createSearchRoutesHandler>[0]['resolvePlaces'];
 
 function dependencies() {
   return {
     resolvePlaces: vi.fn<ResolvePlaces>((query) => Promise.resolve({ kind: 'matches', places: [query === 'castor' ? originPlace : destination] })),
+    loadPublishedSnapshot: vi.fn().mockResolvedValue(publishedSnapshot),
     searchRoutes: vi.fn().mockResolvedValue([]),
     rateLimit: { check: vi.fn().mockResolvedValue({ allowed: true }) },
     maxBodyBytes: 16_384,
@@ -34,20 +56,21 @@ function post(body: unknown, headers?: Record<string, string>): Request {
 
 const validBody = {
   origin: { kind: 'coordinates', coordinates: { lat: 14.7, lon: -17.4 } },
-  destination: { placeId: 'ism' },
+  destination,
   locale: 'fr',
 };
 
 describe('search-routes targeted regressions', () => {
   it('never substitutes the first place when the requested destination id is absent', async () => {
     const deps = dependencies();
-    deps.resolvePlaces.mockResolvedValue({
-      kind: 'matches',
-      places: [{ ...destination, id: 'different-place' }],
+    deps.loadPublishedSnapshot.mockResolvedValue({
+      ...publishedSnapshot,
+      servedPlaces: [{ ...publishedDestination, id: 'different-place', placeId: 'different-place' }],
     });
     const response = await createSearchRoutesHandler(deps)(post(validBody));
 
     expect(response.status).toBe(404);
+    expect(deps.resolvePlaces).not.toHaveBeenCalled();
     expect(deps.searchRoutes).not.toHaveBeenCalled();
   });
 
@@ -125,14 +148,14 @@ describe('search-routes targeted regressions', () => {
     expect(deps.rateLimit.check).toHaveBeenCalledWith('unknown');
   });
 
-  it('aborts downstream place resolution when the whole request reaches ten seconds', async () => {
+  it('aborts the published snapshot read when the whole request reaches ten seconds', async () => {
     vi.useFakeTimers();
     const deps = dependencies();
-    let downstreamSignal: AbortSignal | undefined;
-    deps.resolvePlaces.mockImplementation((_query: string, _locale: string, signal?: AbortSignal) => {
-      downstreamSignal = signal;
+    let snapshotSignal: AbortSignal | undefined;
+    deps.loadPublishedSnapshot.mockImplementation((signal?: AbortSignal) => {
+      snapshotSignal = signal;
       return new Promise((resolve) => {
-        signal?.addEventListener('abort', () => resolve({ kind: 'matches', places: [destination] }), { once: true });
+        signal?.addEventListener('abort', () => resolve(publishedSnapshot), { once: true });
       });
     });
     const pending = createSearchRoutesHandler(deps)(post(validBody));
@@ -141,28 +164,27 @@ describe('search-routes targeted regressions', () => {
     const response = await pending;
 
     expect(response.status).toBe(504);
-    expect(downstreamSignal).toBeInstanceOf(AbortSignal);
-    expect(downstreamSignal?.aborted).toBe(true);
+    expect(snapshotSignal).toBeInstanceOf(AbortSignal);
+    expect(snapshotSignal?.aborted).toBe(true);
   });
 
-  it('resolves a place origin exactly or refuses it before route search', async () => {
+  it('uses the selected place origin by id with canonical snapshot fields', async () => {
     const deps = dependencies();
     const body = {
       ...validBody,
-      origin: { kind: 'place', placeId: 'castor' },
+      origin: originPlace,
     };
     const response = await createSearchRoutesHandler(deps)(post(body));
 
-    if (response.status === 200) {
-      expect(deps.searchRoutes).toHaveBeenCalledTimes(1);
-      const routedOrigin = deps.searchRoutes.mock.calls[0][0].origin;
-      const resolvedExactly =
-        routedOrigin?.id === originPlace.id ||
-        (routedOrigin?.coordinates?.lat === originPlace.coordinates.lat && routedOrigin?.coordinates?.lon === originPlace.coordinates.lon);
-      expect(resolvedExactly).toBe(true);
-    } else {
-      expect([400, 422]).toContain(response.status);
-      expect(deps.searchRoutes).not.toHaveBeenCalled();
-    }
+    expect(response.status).toBe(200);
+    expect(deps.resolvePlaces).not.toHaveBeenCalled();
+    expect(deps.searchRoutes).toHaveBeenCalledTimes(1);
+    expect(deps.searchRoutes.mock.calls[0][0].origin).toMatchObject({
+      id: 'castor',
+      displayName: 'Castor',
+      areaName: 'SICAP',
+      coordinates: { lat: 14.707, lon: -17.451 },
+      aliases: ['Castor stop'],
+    });
   });
 });

@@ -39,6 +39,10 @@ export interface PublishedServedPlace extends ServedPlace, Pick<PlaceCandidate, 
   aliases: string[];
 }
 
+export type PublishedTransitNetworkSnapshot = Omit<TransitNetwork, 'servedPlaces'> & {
+  servedPlaces: PublishedServedPlace[];
+};
+
 export interface NeonFetchOptions {
   fetchOptions?: { signal?: AbortSignal };
 }
@@ -64,7 +68,7 @@ function mapServedPlace(row: PublishedServedPlaceRow, directionId: string): Publ
   };
 }
 
-function mapPublishedNetworkRows(rows: unknown[]): TransitNetwork {
+function mapPublishedNetworkRows(rows: unknown[]): PublishedTransitNetworkSnapshot {
   const typedRows = rows as PublishedNetworkRow[];
   const directions: TransitDirection[] = typedRows.map((row) => ({
     id: row.direction_id,
@@ -109,7 +113,7 @@ export function createPublishedNetworkReader(options: {
     ((sql, params, queryOptions) => client!.query(sql, params, queryOptions) as unknown as Promise<unknown[]>);
 
   return {
-    async load(options: { signal?: AbortSignal } = {}): Promise<TransitNetwork> {
+    async load(options: { signal?: AbortSignal } = {}): Promise<PublishedTransitNetworkSnapshot> {
       try {
         const rows = await query(publishedNetworkSql, [], {
           fetchOptions: options.signal ? { signal: options.signal } : undefined,

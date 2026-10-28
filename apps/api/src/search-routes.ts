@@ -1,20 +1,33 @@
 import type { JourneyOption } from '../../../packages/domain/src/journey';
 import type { RouteSearchInput } from '../../../packages/domain/src/search';
+import { distanceMeters } from '../../../packages/domain/src/search';
+import type { Coordinates } from '../../../packages/domain/src/map';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
+import type { PublishedServedPlace, PublishedTransitNetworkSnapshot } from './neon';
 
 interface RateLimitResult {
   allowed: boolean;
   retryAfterSeconds?: number;
 }
 
-interface PlaceResolution {
-  kind: string;
-  places: PlaceCandidate[];
-}
+type PlaceSelection =
+  | { source: 'catalogue'; id: string }
+  | { source: 'geocoder'; coordinates: Coordinates; displayName: string };
+
+type CoordinateOrigin = { kind: 'coordinates'; coordinates: Coordinates };
+type SelectedOrigin =
+  | CoordinateOrigin
+  | { kind: 'catalogue'; id: string }
+  | { kind: 'geocoder'; coordinates: Coordinates; displayName: string };
 
 interface SearchRouteHandlerDependencies {
-  resolvePlaces(query: string, locale: 'fr' | 'en', signal?: AbortSignal): Promise<PlaceResolution>;
+  resolvePlaces(query: string, locale: 'fr' | 'en', signal?: AbortSignal): Promise<{
+    kind: string;
+    places: PlaceCandidate[];
+  }>;
+  loadPublishedSnapshot(signal?: AbortSignal): Promise<PublishedTransitNetworkSnapshot>;
   searchRoutes(input: {
+    network: PublishedTransitNetworkSnapshot;
     origin: RouteSearchInput['origin'];
     destination: PlaceCandidate;
     locale: 'fr' | 'en';
@@ -26,18 +39,37 @@ interface SearchRouteHandlerDependencies {
 }
 
 interface ValidRequestBody {
-  origin:
-    | { kind: 'coordinates'; coordinates: { lat: number; lon: number } }
-    | { kind: 'place'; placeId: string };
-  destination: { placeId: string; query?: string };
+  origin: SelectedOrigin;
+  destination: PlaceSelection;
   locale: 'fr' | 'en';
 }
+
+type RequestValidation =
+  | { kind: 'valid'; body: ValidRequestBody }
+  | { kind: 'invalid'; reason: 'request' | 'place_name'; locale?: 'fr' | 'en' };
+
+type PlaceSelectionResult =
+  | { kind: 'valid'; selection: PlaceSelection }
+  | { kind: 'invalid' }
+  | { kind: 'invalid_place_name' };
+
+const DAKAR_METRO_GEOCODER_BOUNDS = {
+  minLatitude: 14.55,
+  maxLatitude: 14.9,
+  minLongitude: -17.6,
+  maxLongitude: -17.05,
+} as const;
+
+const MAX_GEOCODER_LABEL_CODE_POINTS = 120;
+const MAX_GEOCODER_DESTINATION_DISTANCE_METERS = 1_200;
+// Treat approximately 10-nanometre haversine distance differences as equal to absorb IEEE-754 noise.
+const DISTANCE_TIE_TOLERANCE_METERS = 1e-8;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function validCoordinates(value: unknown): value is { lat: number; lon: number } {
+function validCoordinates(value: unknown): value is Coordinates {
   if (!isRecord(value)) return false;
   const { lat, lon } = value;
   return (
@@ -52,30 +84,120 @@ function validCoordinates(value: unknown): value is { lat: number; lon: number }
   );
 }
 
-function validateBody(value: unknown): ValidRequestBody | undefined {
-  if (!isRecord(value) || !isRecord(value.origin) || !isRecord(value.destination)) return undefined;
-  const locale = value.locale;
-  if (locale !== 'fr' && locale !== 'en') return undefined;
-  const placeId = value.destination.placeId;
-  if (typeof placeId !== 'string' || !placeId.trim() || placeId.length > 200) return undefined;
-  let origin: ValidRequestBody['origin'];
-  if (value.origin.kind === 'coordinates' && validCoordinates(value.origin.coordinates)) {
-    origin = { kind: 'coordinates', coordinates: value.origin.coordinates };
-  } else if (
-    value.origin.kind === 'place' &&
-    typeof value.origin.placeId === 'string' &&
-    value.origin.placeId.trim().length > 0 &&
-    value.origin.placeId.length <= 200
-  ) {
-    origin = { kind: 'place', placeId: value.origin.placeId.trim() };
-  } else {
-    return undefined;
+function isInsideDakarMetropolitanGuard(coordinates: Coordinates): boolean {
+  // This is a coarse abuse guard, not a claim about Dakar's true geographic limits or a security boundary.
+  // It applies to geocoder selections only; published catalogue places are always resolved by ID.
+  return (
+    coordinates.lat >= DAKAR_METRO_GEOCODER_BOUNDS.minLatitude &&
+    coordinates.lat <= DAKAR_METRO_GEOCODER_BOUNDS.maxLatitude &&
+    coordinates.lon >= DAKAR_METRO_GEOCODER_BOUNDS.minLongitude &&
+    coordinates.lon <= DAKAR_METRO_GEOCODER_BOUNDS.maxLongitude
+  );
+}
+
+function normalizeGeocoderLabel(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.normalize('NFC');
+  if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(normalized)) return undefined;
+  const trimmed = normalized.trim();
+  if (!trimmed || Array.from(trimmed).length > MAX_GEOCODER_LABEL_CODE_POINTS) return undefined;
+  return trimmed;
+}
+
+function parsePlaceSelection(value: unknown): PlaceSelectionResult {
+  if (!isRecord(value)) return { kind: 'invalid' };
+
+  if (value.source === 'catalogue') {
+    const id = value.id;
+    if (typeof id !== 'string' || !id.trim() || id.trim().length > 200) return { kind: 'invalid' };
+    return { kind: 'valid', selection: { source: 'catalogue', id: id.trim() } };
   }
-  const query = typeof value.destination.query === 'string' ? value.destination.query.trim() : undefined;
+
+  if (value.source !== 'geocoder' || !validCoordinates(value.coordinates)) return { kind: 'invalid' };
+  const displayName = normalizeGeocoderLabel(value.displayName);
+  if (!displayName) return { kind: 'invalid_place_name' };
+  if (!isInsideDakarMetropolitanGuard(value.coordinates)) return { kind: 'invalid' };
   return {
-    origin,
-    destination: { placeId: placeId.trim(), ...(query ? { query } : {}) },
-    locale,
+    kind: 'valid',
+    selection: { source: 'geocoder', coordinates: value.coordinates, displayName },
+  };
+}
+
+function validateBody(value: unknown): RequestValidation {
+  if (!isRecord(value) || !isRecord(value.origin)) return { kind: 'invalid', reason: 'request' };
+  const locale = value.locale;
+  if (locale !== 'fr' && locale !== 'en') return { kind: 'invalid', reason: 'request' };
+
+  let origin: SelectedOrigin;
+  if (value.origin.kind === 'coordinates') {
+    if (!validCoordinates(value.origin.coordinates)) return { kind: 'invalid', reason: 'request' };
+    origin = { kind: 'coordinates', coordinates: value.origin.coordinates };
+  } else {
+    const selectedOrigin = parsePlaceSelection(value.origin);
+    if (selectedOrigin.kind === 'invalid_place_name') {
+      return { kind: 'invalid', reason: 'place_name', locale };
+    }
+    if (selectedOrigin.kind === 'invalid') return { kind: 'invalid', reason: 'request' };
+    origin = selectedOrigin.selection.source === 'catalogue'
+      ? { kind: 'catalogue', id: selectedOrigin.selection.id }
+      : {
+          kind: 'geocoder',
+          coordinates: selectedOrigin.selection.coordinates,
+          displayName: selectedOrigin.selection.displayName,
+        };
+  }
+
+  const selectedDestination = parsePlaceSelection(value.destination);
+  if (selectedDestination.kind === 'invalid_place_name') {
+    return { kind: 'invalid', reason: 'place_name', locale };
+  }
+  if (selectedDestination.kind === 'invalid') return { kind: 'invalid', reason: 'request' };
+
+  return {
+    kind: 'valid',
+    body: { origin, destination: selectedDestination.selection, locale },
+  };
+}
+
+function toCandidate(place: PublishedServedPlace): PublishedServedPlace {
+  return place;
+}
+
+function closestPublishedPlace(
+  coordinates: Coordinates,
+  places: readonly PublishedServedPlace[],
+): PublishedServedPlace | undefined {
+  const eligiblePlaces = places
+    .map((place) => ({ place, distance: distanceMeters(coordinates, place.coordinates) }))
+    // Keep the documented service radius exact; no boundary epsilon admits an out-of-range place.
+    .filter(({ distance }) => distance <= MAX_GEOCODER_DESTINATION_DISTANCE_METERS);
+  if (eligiblePlaces.length === 0) return undefined;
+
+  const closestDistance = Math.min(...eligiblePlaces.map(({ distance }) => distance));
+  return eligiblePlaces
+    .filter(({ distance }) => distance - closestDistance <= DISTANCE_TIE_TOLERANCE_METERS)
+    .reduce<PublishedServedPlace | undefined>(
+      (closest, { place }) => !closest || place.id < closest.id ? place : closest,
+      undefined,
+    );
+}
+
+function resolvePublishedSelection(
+  selection: PlaceSelection,
+  snapshot: PublishedTransitNetworkSnapshot,
+): PlaceCandidate | undefined {
+  if (selection.source === 'catalogue') {
+    return snapshot.servedPlaces.find((place) => place.id === selection.id);
+  }
+
+  const nearest = closestPublishedPlace(selection.coordinates, snapshot.servedPlaces);
+  if (!nearest) return undefined;
+  return {
+    id: nearest.id,
+    displayName: selection.displayName,
+    areaName: nearest.areaName,
+    coordinates: selection.coordinates,
+    source: 'geocoder',
   };
 }
 
@@ -143,8 +265,16 @@ async function handleRequest(
   } catch {
     return json({ error: 'Invalid JSON body' }, 400);
   }
-  const body = validateBody(parsed);
-  if (!body) return json({ error: 'Invalid search request' }, 400);
+  const validation = validateBody(parsed);
+  if (validation.kind === 'invalid') {
+    if (validation.reason === 'place_name') {
+      return json({
+        error: validation.locale === 'fr' ? 'Nom de lieu invalide' : 'Invalid place name',
+      }, 400);
+    }
+    return json({ error: 'Invalid search request' }, 400);
+  }
+  const body = validation.body;
 
   // Vercel overwrites x-forwarded-for to prevent spoofing; never trust client-controlled x-real-ip.
   const forwardedFor = request.headers.get('x-forwarded-for');
@@ -158,32 +288,36 @@ async function handleRequest(
     );
   }
 
-  const destinationResolution = await dependencies.resolvePlaces(
-    body.destination.query ?? body.destination.placeId,
-    body.locale,
-    signal,
-  );
-  if (destinationResolution.kind === 'ambiguous') {
-    return json({ kind: 'ambiguous', places: destinationResolution.places }, 200);
-  }
-  const destination = destinationResolution.places.find((place) => place.id === body.destination.placeId);
-  if (!destination) return json({ kind: 'not_found', places: [] }, 404);
+  const snapshot = await dependencies.loadPublishedSnapshot(signal);
 
   let origin: RouteSearchInput['origin'];
   if (body.origin.kind === 'coordinates') {
     origin = body.origin;
+  } else if (body.origin.kind === 'catalogue') {
+    const selectedOriginId = body.origin.id;
+    const publishedOrigin = snapshot.servedPlaces.find((place) => place.id === selectedOriginId);
+    if (!publishedOrigin) return json({ kind: 'origin_not_found' }, 404);
+    origin = toCandidate(publishedOrigin);
   } else {
-    const requestedOriginPlaceId = body.origin.placeId;
-    const originResolution = await dependencies.resolvePlaces(requestedOriginPlaceId, body.locale, signal);
-    if (originResolution.kind === 'ambiguous') {
-      return json({ kind: 'ambiguous_origin', places: originResolution.places }, 200);
-    }
-    const resolvedOrigin = originResolution.places.find((place) => place.id === requestedOriginPlaceId);
-    if (!resolvedOrigin) return json({ kind: 'origin_not_found' }, 404);
-    origin = resolvedOrigin;
+    origin = { kind: 'coordinates', coordinates: body.origin.coordinates };
   }
 
-  const routes = await dependencies.searchRoutes({ origin, destination, locale: body.locale, signal });
+  const destination = resolvePublishedSelection(body.destination, snapshot);
+  if (!destination) {
+    if (body.destination.source === 'geocoder') {
+      return json({ kind: 'no_verified_journey' }, 200);
+    }
+    return json({ kind: 'not_found', places: [] }, 404);
+  }
+
+  const routes = await dependencies.searchRoutes({
+    network: snapshot,
+    origin,
+    destination,
+    locale: body.locale,
+    signal,
+  });
+  if (routes.length === 0) return json({ kind: 'no_verified_journey' }, 200);
   return json({ kind: 'routes', places: [destination], routes }, 200);
 }
 
