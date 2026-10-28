@@ -1,4 +1,3 @@
-import type { JourneyOption } from '../../../packages/domain/src/journey';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
 import { createPublishedNetworkReader } from '../src/neon';
 import type { PublishedTransitNetworkSnapshot } from '../src/neon';
@@ -6,6 +5,12 @@ import { createSearchRoutesHandler } from '../src/search-routes';
 import { createCachedNetworkLoader } from '../src/networkCache';
 import type { SharedRateLimitStore } from '../src/rateLimit';
 import { createRateLimitPolicy } from '../src/rateLimitPolicy';
+import {
+  createStadiaWalkingProvider,
+  maxWalkingCallsPerRequestFromEnvironment,
+  searchRoutesWithMetadata,
+  type WalkingRouteProvider,
+} from '../src/routing';
 
 type EndpointEnvironment = Readonly<Record<string, string | undefined>>;
 type SearchDependencies = Omit<Parameters<typeof createSearchRoutesHandler>[0], 'rateLimit'>;
@@ -39,6 +44,7 @@ type RuntimeNetworkReader = Pick<ReturnType<typeof createPublishedNetworkReader>
 interface RuntimeNetworkOptions {
   createReader?: (options: { connectionString: string }) => RuntimeNetworkReader;
   now?: () => number;
+  walkingFetch?: typeof fetch;
 }
 
 export function createRuntimeDependencies(
@@ -46,6 +52,7 @@ export function createRuntimeDependencies(
   options: RuntimeNetworkOptions = {},
 ): SearchDependencies {
   let loadCachedSnapshot: ((signal?: AbortSignal) => Promise<PublishedTransitNetworkSnapshot>) | undefined;
+  let walkingProvider: WalkingRouteProvider | undefined;
   return {
     async resolvePlaces() {
       throw new Error('Place resolution is unavailable');
@@ -62,9 +69,24 @@ export function createRuntimeDependencies(
       }
       return loadCachedSnapshot(signal);
     },
-    async searchRoutes(): Promise<JourneyOption[]> {
-      // No pedestrian routing provider is configured yet; fail closed instead of inventing walk geometry.
-      throw new Error('Pedestrian routing provider is unavailable');
+    async searchRoutes(input) {
+      const apiKey = env.STADIA_API_KEY?.trim();
+      if (!apiKey) {
+        return { routes: [], partial: true, partialReason: 'walking_service_error' };
+      }
+      if (!walkingProvider) {
+        walkingProvider = createStadiaWalkingProvider({
+          apiKey,
+          fetch: options.walkingFetch ?? fetch,
+        });
+      }
+      return searchRoutesWithMetadata({
+        ...input,
+        walking: walkingProvider,
+        maxExternalCallsPerRequest: maxWalkingCallsPerRequestFromEnvironment(
+          env.MAX_WALKING_CALLS_PER_REQUEST,
+        ),
+      });
     },
     maxBodyBytes: 16_384,
     requestTimeoutMs: 10_000,

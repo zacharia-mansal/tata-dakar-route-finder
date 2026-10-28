@@ -19,6 +19,7 @@ interface ResolvePlacesEndpointOptions {
   sharedRateLimitStore?: SharedRateLimitStore;
   stadiaApiKey?: string;
   resolvePlaces?: ResolvePlaces;
+  requestTimeoutMs?: number;
 }
 
 function localizedUnavailable(locale: 'fr' | 'en'): Response {
@@ -37,6 +38,15 @@ function localizedFailure(locale: 'fr' | 'en'): Response {
       ? 'La recherche de lieux a échoué. Veuillez réessayer.'
       : 'Place search failed. Please try again.',
   }, 500);
+}
+
+function localizedTimeout(locale: 'fr' | 'en'): Response {
+  return jsonResponse({
+    error: 'request_timeout',
+    message: locale === 'fr' ? 'La recherche a expiré.' : 'The search timed out.',
+    partial: true,
+    partialReason: 'deadline',
+  }, 504);
 }
 
 type RuntimeNetworkReader = Pick<ReturnType<typeof createPublishedNetworkReader>, 'load'>;
@@ -93,7 +103,7 @@ export function createResolvePlacesEndpoint(options: ResolvePlacesEndpointOption
     defaultMaxRequests: 60,
   });
 
-  return async (request: Request): Promise<Response> => {
+  const handleRequest = async (request: Request, signal: AbortSignal): Promise<Response> => {
     let locale = localeFromAcceptLanguage(request);
     if (request.method !== 'POST') {
       return jsonResponse({
@@ -104,8 +114,9 @@ export function createResolvePlacesEndpoint(options: ResolvePlacesEndpointOption
 
     let bodyText: string | undefined;
     try {
-      bodyText = await readBoundedRequestBody(request, 16_384, request.signal);
+      bodyText = await readBoundedRequestBody(request, 16_384, signal);
     } catch {
+      if (signal.aborted) return localizedTimeout(locale);
       return jsonResponse({
         error: 'invalid_request',
         message: locale === 'fr' ? 'Requête JSON invalide.' : 'Invalid request.',
@@ -148,7 +159,7 @@ export function createResolvePlacesEndpoint(options: ResolvePlacesEndpointOption
     try {
       const forwardedFor = request.headers.get('x-forwarded-for');
       const clientKey = forwardedFor?.split(',')[0]?.trim() || 'unknown';
-      const rateLimit = await policy.rateLimit.check(clientKey);
+      const rateLimit = await policy.rateLimit.check(clientKey, { signal });
       if (rateLimit.unavailable) return localizedUnavailable(locale);
       if (!rateLimit.allowed) {
         return jsonResponse({
@@ -163,10 +174,37 @@ export function createResolvePlacesEndpoint(options: ResolvePlacesEndpointOption
 
       if (!options.stadiaApiKey?.trim() || !options.resolvePlaces) return localizedUnavailable(locale);
 
-      const result = await options.resolvePlaces(query, locale, request.signal);
+      const result = await options.resolvePlaces(query, locale, signal);
       return jsonResponse(result);
     } catch {
+      if (signal.aborted) return localizedTimeout(locale);
       return localizedFailure(locale);
+    }
+  };
+
+  return async (request: Request): Promise<Response> => {
+    const controller = new AbortController();
+    const abortFromRequest = () => controller.abort(new Error('Request aborted'));
+    if (request.signal.aborted) abortFromRequest();
+    else request.signal.addEventListener('abort', abortFromRequest, { once: true });
+
+    const locale = localeFromAcceptLanguage(request);
+    const timeoutMs = Math.min(10_000, options.requestTimeoutMs ?? 10_000);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutResponse = new Promise<Response>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort(new Error('Request timeout'));
+        resolve(localizedTimeout(locale));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([handleRequest(request, controller.signal), timeoutResponse]);
+    } catch {
+      return controller.signal.aborted ? localizedTimeout(locale) : localizedFailure(locale);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      request.signal.removeEventListener('abort', abortFromRequest);
     }
   };
 }

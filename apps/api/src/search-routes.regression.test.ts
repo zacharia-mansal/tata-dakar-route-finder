@@ -138,14 +138,20 @@ describe('search-routes targeted regressions', () => {
       'x-real-ip': '203.0.113.99',
     }));
 
-    expect(deps.rateLimit.check).toHaveBeenCalledWith('198.51.100.24');
+    expect(deps.rateLimit.check).toHaveBeenCalledWith(
+      '198.51.100.24',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('does not trust x-real-ip when Vercel x-forwarded-for is absent', async () => {
     const deps = dependencies();
     await createSearchRoutesHandler(deps)(post(validBody, { 'x-real-ip': '203.0.113.99' }));
 
-    expect(deps.rateLimit.check).toHaveBeenCalledWith('unknown');
+    expect(deps.rateLimit.check).toHaveBeenCalledWith(
+      'unknown',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('aborts the published snapshot read when the whole request reaches ten seconds', async () => {

@@ -3,6 +3,7 @@ import type { Coordinates } from '../../../packages/domain/src/map';
 import type { ServedPlace, TransitNetwork } from '../../../packages/domain/src/journey';
 import type { TransitDirection, TransitStop } from '../../../packages/domain/src/transit';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
+import { withAbortTimeout } from './abort';
 
 export const publishedNetworkSql = [
   'select line_id, line_number, direction_id, direction_name,',
@@ -95,6 +96,7 @@ function mapPublishedNetworkRows(rows: unknown[]): PublishedTransitNetworkSnapsh
 export function createPublishedNetworkReader(options: {
   connectionString?: string;
   query?: PublishedNetworkQuery;
+  queryTimeoutMs?: number;
 } = {}) {
   const connectionString = options.connectionString ?? process.env.DATABASE_URL_PUBLIC_API;
   if (!connectionString?.trim()) {
@@ -111,13 +113,17 @@ export function createPublishedNetworkReader(options: {
   }
   const query: PublishedNetworkQuery = options.query ??
     ((sql, params, queryOptions) => client!.query(sql, params, queryOptions) as unknown as Promise<unknown[]>);
+  const queryTimeoutMs = options.queryTimeoutMs ?? 4_000;
 
   return {
     async load(options: { signal?: AbortSignal } = {}): Promise<PublishedTransitNetworkSnapshot> {
       try {
-        const rows = await query(publishedNetworkSql, [], {
-          fetchOptions: options.signal ? { signal: options.signal } : undefined,
-        });
+        const rows = await withAbortTimeout(
+          (signal) => query(publishedNetworkSql, [], { fetchOptions: { signal } }),
+          queryTimeoutMs,
+          `Published network query timeout after ${queryTimeoutMs} ms`,
+          options.signal,
+        );
         return mapPublishedNetworkRows(rows);
       } catch {
         throw new Error('Unable to load published transit network');

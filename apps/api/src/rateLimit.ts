@@ -1,5 +1,5 @@
 export interface SharedRateLimitStore {
-  increment(key: string): Promise<number>;
+  increment(key: string, options?: { signal?: AbortSignal }): Promise<number>;
 }
 
 export function createRateLimitGuard(options: {
@@ -10,9 +10,12 @@ export function createRateLimitGuard(options: {
 }) {
   const now = options.now ?? Date.now;
   return {
-    async check(key: string): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
+    async check(
+      key: string,
+      operation: { signal?: AbortSignal } = {},
+    ): Promise<{ allowed: boolean; retryAfterSeconds?: number }> {
       const windowStart = Math.floor(now() / options.windowMs);
-      const count = await options.store.increment(key + ':' + windowStart);
+      const count = await options.store.increment(key + ':' + windowStart, { signal: operation.signal });
       if (count <= options.maxRequests) return { allowed: true };
       const nextWindowAt = (windowStart + 1) * options.windowMs;
       return {

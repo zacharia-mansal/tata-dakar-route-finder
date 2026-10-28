@@ -1,5 +1,6 @@
 import type { Coordinates } from '../../../packages/domain/src/map';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
+import { withAbortTimeout } from './abort';
 
 export interface PlaceCatalogue {
   search(query: string, locale: string, signal?: AbortSignal): Promise<PlaceCandidate[]>;
@@ -69,20 +70,24 @@ function parseCoordinates(value: unknown): Coordinates | undefined {
 export function createStadiaGeocoder(options: {
   apiKey: string;
   fetch: typeof fetch;
+  requestTimeoutMs?: number;
 }) {
+  const requestTimeoutMs = options.requestTimeoutMs ?? 4_000;
   return {
     async search(query: string, _locale: string, signal?: AbortSignal): Promise<PlaceCandidate[]> {
       const url = new URL('https://api.stadiamaps.com/geocoding/v1/search');
       url.searchParams.set('text', query);
-      const response = await options.fetch(url, {
-        headers: {
-          accept: 'application/json',
-          authorization: `Stadia-Auth ${options.apiKey}`,
-        },
-        ...(signal ? { signal } : {}),
-      });
-      if (!response.ok) throw new Error('Stadia geocoder request failed');
-      const payload: unknown = await response.json();
+      const payload: unknown = await withAbortTimeout(async (requestSignal) => {
+        const response = await options.fetch(url, {
+          headers: {
+            accept: 'application/json',
+            authorization: `Stadia-Auth ${options.apiKey}`,
+          },
+          signal: requestSignal,
+        });
+        if (!response.ok) throw new Error('Stadia geocoder request failed');
+        return response.json() as Promise<unknown>;
+      }, requestTimeoutMs, `Stadia geocoder timeout after ${requestTimeoutMs} ms`, signal);
       if (
         typeof payload !== 'object' ||
         payload === null ||

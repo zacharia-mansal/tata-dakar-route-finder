@@ -3,6 +3,7 @@ import type { RouteSearchInput } from '../../../packages/domain/src/search';
 import { distanceMeters } from '../../../packages/domain/src/search';
 import type { Coordinates } from '../../../packages/domain/src/map';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
+import type { RoutingSearchResult } from './routing';
 import { jsonResponse, localeFromAcceptLanguage, readBoundedRequestBody } from './httpRequest';
 import type { PublishedServedPlace, PublishedTransitNetworkSnapshot } from './neon';
 
@@ -34,8 +35,8 @@ interface SearchRouteHandlerDependencies {
     destination: PlaceCandidate;
     locale: 'fr' | 'en';
     signal?: AbortSignal;
-  }): Promise<JourneyOption[]>;
-  rateLimit: { check(key: string): Promise<RateLimitResult> };
+  }): Promise<JourneyOption[] | RoutingSearchResult>;
+  rateLimit: { check(key: string, options?: { signal?: AbortSignal }): Promise<RateLimitResult> };
   maxBodyBytes: number;
   requestTimeoutMs: number;
 }
@@ -212,6 +213,22 @@ function localizedServiceUnavailable(locale: 'fr' | 'en'): Response {
   }, 503);
 }
 
+function localizedIncompleteSearch(
+  locale: 'fr' | 'en',
+  partialReason: NonNullable<RoutingSearchResult['partialReason']>,
+): Response {
+  return jsonResponse({
+    error: partialReason === 'deadline' ? 'request_timeout' : 'service_unavailable',
+    message: partialReason === 'deadline'
+      ? (locale === 'fr' ? 'La recherche a expiré.' : 'The search timed out.')
+      : (locale === 'fr'
+          ? 'La recherche de trajet est temporairement indisponible.'
+          : 'Route search is temporarily unavailable.'),
+    partial: true,
+    partialReason,
+  }, partialReason === 'deadline' ? 504 : 503);
+}
+
 function localizedInternalError(locale: 'fr' | 'en'): Response {
   return jsonResponse({
     error: 'internal_error',
@@ -274,7 +291,7 @@ async function handleRequest(
   // Vercel overwrites x-forwarded-for to prevent spoofing; never trust client-controlled x-real-ip.
   const forwardedFor = request.headers.get('x-forwarded-for');
   const clientKey = forwardedFor?.split(',')[0]?.trim() || 'unknown';
-  const rateLimit = await dependencies.rateLimit.check(clientKey);
+  const rateLimit = await dependencies.rateLimit.check(clientKey, { signal });
   if (rateLimit.unavailable) return localizedServiceUnavailable(body.locale);
   if (!rateLimit.allowed) {
     return jsonResponse(
@@ -311,20 +328,36 @@ async function handleRequest(
     return jsonResponse({ kind: 'not_found', places: [] }, 404);
   }
 
-  const routes = await dependencies.searchRoutes({
+  const searchResult = await dependencies.searchRoutes({
     network: snapshot,
     origin,
     destination,
     locale: body.locale,
     signal,
   });
-  if (routes.length === 0) return jsonResponse({ kind: 'no_verified_journey' }, 200);
-  return jsonResponse({ kind: 'routes', places: [destination], routes }, 200);
+  const result: RoutingSearchResult = Array.isArray(searchResult)
+    ? { routes: searchResult, partial: false }
+    : searchResult;
+  if (result.routes.length === 0) {
+    if (result.partial && result.partialReason) {
+      return localizedIncompleteSearch(body.locale, result.partialReason);
+    }
+    return jsonResponse({ kind: 'no_verified_journey' }, 200);
+  }
+  return jsonResponse({
+    kind: 'routes',
+    places: [destination],
+    routes: result.routes,
+    ...(result.partial ? { partial: true, partialReason: result.partialReason } : {}),
+  }, 200);
 }
 
 export function createSearchRoutesHandler(dependencies: SearchRouteHandlerDependencies) {
   return async (request: Request): Promise<Response> => {
     const controller = new AbortController();
+    const abortFromRequest = () => controller.abort(new Error('Request aborted'));
+    if (request.signal.aborted) abortFromRequest();
+    else request.signal.addEventListener('abort', abortFromRequest, { once: true });
     let locale: 'fr' | 'en' = localeFromAcceptLanguage(request);
     const timeoutMs = Math.min(10_000, dependencies.requestTimeoutMs);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -334,6 +367,8 @@ export function createSearchRoutesHandler(dependencies: SearchRouteHandlerDepend
         resolve(jsonResponse({
           error: 'request_timeout',
           message: locale === 'fr' ? 'La recherche a expiré.' : 'The search timed out.',
+          partial: true,
+          partialReason: 'deadline',
         }, 504));
       }, timeoutMs);
     });
@@ -347,11 +382,14 @@ export function createSearchRoutesHandler(dependencies: SearchRouteHandlerDepend
         return jsonResponse({
           error: 'request_timeout',
           message: locale === 'fr' ? 'La recherche a expiré.' : 'The search timed out.',
+          partial: true,
+          partialReason: 'deadline',
         }, 504);
       }
       return localizedInternalError(locale);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      request.signal.removeEventListener('abort', abortFromRequest);
     }
   };
 }

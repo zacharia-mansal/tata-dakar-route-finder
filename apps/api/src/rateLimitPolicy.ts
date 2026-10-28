@@ -14,7 +14,7 @@ export interface RateLimitPolicyOptions {
 }
 
 export interface PolicyRateLimit {
-  check(key: string): Promise<{
+  check(key: string, options?: { signal?: AbortSignal }): Promise<{
     allowed: boolean;
     retryAfterSeconds?: number;
     unavailable?: true;
@@ -39,7 +39,7 @@ function parseMaxRequests(value: string | undefined, defaultValue: number): numb
 }
 
 function scopedStore(store: SharedRateLimitStore, namespace: string): SharedRateLimitStore {
-  return { increment: (key) => store.increment(`${namespace}:${key}`) };
+  return { increment: (key, options) => store.increment(`${namespace}:${key}`, options) };
 }
 
 function safeRateLimit(store: SharedRateLimitStore, maxRequests: number): PolicyRateLimit {
@@ -49,9 +49,9 @@ function safeRateLimit(store: SharedRateLimitStore, maxRequests: number): Policy
     store,
   });
   return {
-    async check(key) {
+    async check(key, options) {
       try {
-        return await guard.check(key);
+        return await guard.check(key, options);
       } catch {
         return { allowed: false, unavailable: true };
       }

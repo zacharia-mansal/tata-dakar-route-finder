@@ -81,11 +81,15 @@ describe('published network Neon HTTP regressions', () => {
 
     await reader.load({ signal: controller.signal });
 
-    expect(neonHarness.query).toHaveBeenCalledWith(
-      publishedNetworkSql,
-      [],
-      expect.objectContaining({ fetchOptions: expect.objectContaining({ signal: controller.signal }) }),
-    );
+    const call = neonHarness.query.mock.calls[0];
+    const queryOptions = call?.[2];
+    const fetchOptions = queryOptions ? Reflect.get(queryOptions, 'fetchOptions') : undefined;
+    const querySignal = fetchOptions ? Reflect.get(fetchOptions, 'signal') : undefined;
+
+    expect(call?.[0]).toBe(publishedNetworkSql);
+    expect(call?.[1]).toEqual([]);
+    expect(querySignal).toBeInstanceOf(AbortSignal);
+    expect(querySignal).not.toBe(controller.signal);
   });
 
   it('maps the SQL direction_id column to the domain direction id', async () => {

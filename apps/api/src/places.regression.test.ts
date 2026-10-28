@@ -37,6 +37,8 @@ describe('Stadia geocoder targeted regressions', () => {
 
     await geocoder.search('Castor', 'fr', controller.signal);
 
-    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+    const requestSignal = fetchMock.mock.calls[0]?.[1]?.signal;
+    expect(requestSignal).toBeInstanceOf(AbortSignal);
+    expect(requestSignal).not.toBe(controller.signal);
   });
 });
