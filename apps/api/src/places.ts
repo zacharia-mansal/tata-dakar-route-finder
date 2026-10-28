@@ -24,9 +24,13 @@ export function createPlaceResolver(dependencies: {
       ? await dependencies.catalogue.search(query, locale, signal)
       : await dependencies.catalogue.search(query, locale);
     if (catalogueMatches.length > 0) {
+      // A served place can appear once per direction in the published network. The
+      // resolver presents places to the user, so direction rows must not create a
+      // false ambiguity for one place ID.
+      const uniqueMatches = [...new Map(catalogueMatches.map((place) => [place.id, place])).values()];
       return {
-        kind: catalogueMatches.length > 1 ? 'ambiguous' : 'matches',
-        places: catalogueMatches,
+        kind: uniqueMatches.length > 1 ? 'ambiguous' : 'matches',
+        places: uniqueMatches,
       };
     }
     const geocoded = signal

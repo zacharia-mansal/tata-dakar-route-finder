@@ -3,11 +3,13 @@ import type { RouteSearchInput } from '../../../packages/domain/src/search';
 import { distanceMeters } from '../../../packages/domain/src/search';
 import type { Coordinates } from '../../../packages/domain/src/map';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
+import { jsonResponse, localeFromAcceptLanguage, readBoundedRequestBody } from './httpRequest';
 import type { PublishedServedPlace, PublishedTransitNetworkSnapshot } from './neon';
 
 interface RateLimitResult {
   allowed: boolean;
   retryAfterSeconds?: number;
+  unavailable?: true;
 }
 
 type PlaceSelection =
@@ -201,88 +203,87 @@ function resolvePublishedSelection(
   };
 }
 
-function json(body: unknown, status = 200, additionalHeaders?: Record<string, string>): Response {
-  const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
-  for (const [name, value] of Object.entries(additionalHeaders ?? {})) headers.set(name, value);
-  return new Response(JSON.stringify(body), { status, headers });
+function localizedServiceUnavailable(locale: 'fr' | 'en'): Response {
+  return jsonResponse({
+    error: 'service_unavailable',
+    message: locale === 'fr'
+      ? 'La recherche d’itinéraire est temporairement indisponible.'
+      : 'Route search is temporarily unavailable.',
+  }, 503);
 }
 
-async function readBoundedBody(
-  request: Request,
-  maxBytes: number,
-  signal: AbortSignal,
-): Promise<string | undefined> {
-  const contentLengthHeader = request.headers.get('content-length');
-  if (contentLengthHeader && /^\d+$/.test(contentLengthHeader.trim())) {
-    if (Number(contentLengthHeader) > maxBytes) return undefined;
-  }
-  if (!request.body) return '';
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  const cancelOnAbort = () => {
-    void reader.cancel(new Error('Request aborted')).catch(() => undefined);
-  };
-  signal.addEventListener('abort', cancelOnAbort, { once: true });
-  try {
-    while (true) {
-      if (signal.aborted) throw new Error('Request aborted');
-      const { done, value } = await reader.read();
-      if (signal.aborted) throw new Error('Request aborted');
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxBytes) {
-        await reader.cancel();
-        return undefined;
-      }
-      chunks.push(value);
-    }
-  } finally {
-    signal.removeEventListener('abort', cancelOnAbort);
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
+function localizedInternalError(locale: 'fr' | 'en'): Response {
+  return jsonResponse({
+    error: 'internal_error',
+    message: locale === 'fr'
+      ? 'La recherche d’itinéraire a échoué. Veuillez réessayer.'
+      : 'Route search failed. Please try again.',
+  }, 500);
 }
 
 async function handleRequest(
   request: Request,
   dependencies: SearchRouteHandlerDependencies,
   signal: AbortSignal,
+  setLocale: (locale: 'fr' | 'en') => void,
 ): Promise<Response> {
-  if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, { allow: 'POST' });
-  const bodyText = await readBoundedBody(request, dependencies.maxBodyBytes, signal);
-  if (bodyText === undefined) return json({ error: 'Request body too large' }, 413);
+  let locale = localeFromAcceptLanguage(request);
+  setLocale(locale);
+  if (request.method !== 'POST') {
+    return jsonResponse({
+      error: 'method_not_allowed',
+      message: locale === 'fr' ? 'Méthode non autorisée.' : 'Method not allowed.',
+    }, 405, { allow: 'POST' });
+  }
+  const bodyText = await readBoundedRequestBody(request, dependencies.maxBodyBytes, signal);
+  if (bodyText === undefined) {
+    return jsonResponse({
+      error: 'request_too_large',
+      message: locale === 'fr' ? 'La requête est trop volumineuse.' : 'Request body is too large.',
+    }, 413);
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(bodyText);
   } catch {
-    return json({ error: 'Invalid JSON body' }, 400);
+    return jsonResponse({
+      error: 'invalid_json',
+      message: locale === 'fr' ? 'Requête JSON invalide.' : 'Invalid request.',
+    }, 400);
   }
   const validation = validateBody(parsed);
   if (validation.kind === 'invalid') {
+    locale = validation.locale ?? (
+      isRecord(parsed) && (parsed.locale === 'en' || parsed.locale === 'fr') ? parsed.locale : locale
+    );
+    setLocale(locale);
     if (validation.reason === 'place_name') {
-      return json({
-        error: validation.locale === 'fr' ? 'Nom de lieu invalide' : 'Invalid place name',
+      return jsonResponse({
+        error: 'invalid_place_name',
+        message: locale === 'fr' ? 'Nom de lieu invalide.' : 'Invalid place name.',
       }, 400);
     }
-    return json({ error: 'Invalid search request' }, 400);
+    return jsonResponse({
+      error: 'invalid_request',
+      message: locale === 'fr' ? 'Requête invalide.' : 'Invalid request.',
+    }, 400);
   }
   const body = validation.body;
+  setLocale(body.locale);
 
   // Vercel overwrites x-forwarded-for to prevent spoofing; never trust client-controlled x-real-ip.
   const forwardedFor = request.headers.get('x-forwarded-for');
   const clientKey = forwardedFor?.split(',')[0]?.trim() || 'unknown';
   const rateLimit = await dependencies.rateLimit.check(clientKey);
+  if (rateLimit.unavailable) return localizedServiceUnavailable(body.locale);
   if (!rateLimit.allowed) {
-    return json(
-      { error: 'Rate limit exceeded' },
+    return jsonResponse(
+      {
+        error: 'rate_limited',
+        message: body.locale === 'fr'
+          ? 'Trop de requêtes. Veuillez réessayer plus tard.'
+          : 'Too many requests. Please try again later.',
+      },
       429,
       rateLimit.retryAfterSeconds ? { 'retry-after': String(rateLimit.retryAfterSeconds) } : undefined,
     );
@@ -296,7 +297,7 @@ async function handleRequest(
   } else if (body.origin.kind === 'catalogue') {
     const selectedOriginId = body.origin.id;
     const publishedOrigin = snapshot.servedPlaces.find((place) => place.id === selectedOriginId);
-    if (!publishedOrigin) return json({ kind: 'origin_not_found' }, 404);
+    if (!publishedOrigin) return jsonResponse({ kind: 'origin_not_found' }, 404);
     origin = toCandidate(publishedOrigin);
   } else {
     origin = { kind: 'coordinates', coordinates: body.origin.coordinates };
@@ -305,9 +306,9 @@ async function handleRequest(
   const destination = resolvePublishedSelection(body.destination, snapshot);
   if (!destination) {
     if (body.destination.source === 'geocoder') {
-      return json({ kind: 'no_verified_journey' }, 200);
+      return jsonResponse({ kind: 'no_verified_journey' }, 200);
     }
-    return json({ kind: 'not_found', places: [] }, 404);
+    return jsonResponse({ kind: 'not_found', places: [] }, 404);
   }
 
   const routes = await dependencies.searchRoutes({
@@ -317,27 +318,38 @@ async function handleRequest(
     locale: body.locale,
     signal,
   });
-  if (routes.length === 0) return json({ kind: 'no_verified_journey' }, 200);
-  return json({ kind: 'routes', places: [destination], routes }, 200);
+  if (routes.length === 0) return jsonResponse({ kind: 'no_verified_journey' }, 200);
+  return jsonResponse({ kind: 'routes', places: [destination], routes }, 200);
 }
 
 export function createSearchRoutesHandler(dependencies: SearchRouteHandlerDependencies) {
   return async (request: Request): Promise<Response> => {
     const controller = new AbortController();
+    let locale: 'fr' | 'en' = localeFromAcceptLanguage(request);
     const timeoutMs = Math.min(10_000, dependencies.requestTimeoutMs);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutResponse = new Promise<Response>((resolve) => {
       timer = setTimeout(() => {
         controller.abort(new Error('Request timeout'));
-        resolve(json({ error: 'Request timeout' }, 504));
+        resolve(jsonResponse({
+          error: 'request_timeout',
+          message: locale === 'fr' ? 'La recherche a expiré.' : 'The search timed out.',
+        }, 504));
       }, timeoutMs);
     });
-    const work = handleRequest(request, dependencies, controller.signal);
+    const work = handleRequest(request, dependencies, controller.signal, (validatedLocale) => {
+      locale = validatedLocale;
+    });
     try {
       return await Promise.race([work, timeoutResponse]);
     } catch {
-      if (controller.signal.aborted) return json({ error: 'Request timeout' }, 504);
-      return json({ error: 'Unable to complete route search' }, 500);
+      if (controller.signal.aborted) {
+        return jsonResponse({
+          error: 'request_timeout',
+          message: locale === 'fr' ? 'La recherche a expiré.' : 'The search timed out.',
+        }, 504);
+      }
+      return localizedInternalError(locale);
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }

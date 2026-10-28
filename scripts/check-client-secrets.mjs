@@ -55,6 +55,7 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
 
 const SECRET_EXPO_SUFFIX = /(?:^|_)(?:ACCESS_KEY|API_KEY|AUTH|BEARER|CREDENTIALS?|DATABASE|DB|ENCRYPTION|KEY|PASS|PASSWORD|PASSWD|PRIVATE|SECRET|SIGNING|TOKEN)(?:_|$)/i;
 const SENSITIVE_ENV_REFERENCE = /\b(?:DATABASE_URL|PGPASSWORD|DB_PASSWORD)\b/i;
+const SERVER_ONLY_ENV_REFERENCE = /\b(?:ALLOW_MEMORY_RATE_LIMIT|EXPO_PUBLIC_ALLOW_MEMORY_RATE_LIMIT)\b/i;
 const PASSWORD_VARIABLE_REFERENCE = /\b(?:PASSWORD|PASSWD|PGPASSWORD|DB_PASSWORD)\b\s*(?:=|:)\s*[^;\s,]+/i;
 const POSTGRES_CONNECTION_STRING = /\bpostgres(?:ql)?:\/\//i;
 const URL_WITH_CREDENTIALS = /\b[a-z][a-z\d+.-]*:\/\/[^/?#\s"'`]+:[^@/?#\s"'`]+@/i;
@@ -66,6 +67,7 @@ const RULE_MESSAGES = Object.freeze({
   'postgres-url': 'PostgreSQL connection strings must remain server-side.',
   'public-url-query': 'Public API endpoints must not contain query parameters or fragments.',
   'secret-reference': 'Password values and references must remain server-side.',
+  'server-only-env-reference': 'Server-only environment settings must not be referenced by the client.',
   'url-credentials': 'URLs containing embedded credentials must remain server-side.',
 });
 
@@ -82,6 +84,9 @@ export function findClientSecretLeaks(source, filename) {
 
   if (SENSITIVE_ENV_REFERENCE.test(source)) {
     rules.add('database-url');
+  }
+  if (SERVER_ONLY_ENV_REFERENCE.test(source)) {
+    rules.add('server-only-env-reference');
   }
   if (PASSWORD_VARIABLE_REFERENCE.test(source)) {
     rules.add('secret-reference');
