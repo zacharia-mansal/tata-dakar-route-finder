@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createPublishedNetworkReader, publishedNetworkSql } from './neon';
+import {
+  createPublishedNetworkReader,
+  publishedNetworkSql,
+  type PublishedNetworkQuery,
+} from './neon';
 
 const neonHarness = vi.hoisted(() => ({ neon: vi.fn(), query: vi.fn() }));
 vi.mock('@neondatabase/serverless', () => ({ neon: neonHarness.neon }));
@@ -26,7 +30,7 @@ const fixtureRows = [{
   route_shape: null,
 }];
 
-function injectedReader(query = neonHarness.query) {
+function injectedReader(query: PublishedNetworkQuery = neonHarness.query) {
   return createPublishedNetworkReader({ connectionString: fixtureConnectionValue, query });
 }
 

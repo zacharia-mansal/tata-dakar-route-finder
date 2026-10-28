@@ -12,9 +12,11 @@ const originPlace = {
   coordinates: { lat: 14.707, lon: -17.451 }, source: 'catalogue' as const,
 };
 
+type ResolvePlaces = Parameters<typeof createSearchRoutesHandler>[0]['resolvePlaces'];
+
 function dependencies() {
   return {
-    resolvePlaces: vi.fn((query: string) => Promise.resolve({ kind: 'matches', places: [query === 'castor' ? originPlace : destination] })),
+    resolvePlaces: vi.fn<ResolvePlaces>((query) => Promise.resolve({ kind: 'matches', places: [query === 'castor' ? originPlace : destination] })),
     searchRoutes: vi.fn().mockResolvedValue([]),
     rateLimit: { check: vi.fn().mockResolvedValue({ allowed: true }) },
     maxBodyBytes: 16_384,
