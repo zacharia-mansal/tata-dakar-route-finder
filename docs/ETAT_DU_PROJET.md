@@ -105,7 +105,7 @@ Les handlers et la logique serveur sont testés, mais aucun écran client ne con
 
 Le workflow `.github/workflows/neon-db.yml` contient maintenant un job indépendant `workspace-validation` : installation verrouillée, typechecks, Vitest complet et scan client. Il n’utilise aucun secret Neon, possède uniquement `contents: read` et n’est pas filtré par origine de PR ; il est prévu pour tourner aussi sur les PR de forks. Le contrat du workflow est testé localement.
 
-Le job est dans le commit local `1a9f60e` (`wip: add secret-free workspace CI job (not final)`). Il n’a pas été poussé et aucun run GitHub de ce nouveau job n’a été observé. Les jobs Neon existants n’ont pas été modifiés pour cet ajout.
+Le job est présent dans la branche locale. Le commit `1fbe022` ajoute aussi l’identité rate limit fondée sur `x-vercel-forwarded-for`, ses tests contre un `x-forwarded-for` falsifié et la procédure du rôle API dans le README. Le présent document est mis à jour séparément avec les résultats de ce jalon. Le push de la branche a échoué avant la création d’une PR ; aucun run GitHub de `workspace-validation` ni des jobs Neon n’a donc été observé. Les jobs Neon n’ont pas été modifiés pour le job workspace.
 
 ## 6. État produit réel
 
@@ -128,26 +128,30 @@ Voir [docs/neon-auth-spike.md](neon-auth-spike.md) pour les résultats et limite
 
 ## 7. Git et validations exécutées
 
-### État Git contrôlé avant création de ce document
+### État Git contrôlé le 29 octobre 2026
 
 - Branche : `task-3-search-journeys`.
-- HEAD local : `1a9f60e` — `wip: add secret-free workspace CI job (not final)`.
+- Dernier commit local de code testé : `1fbe022` — `fix: trust Vercel client IP for rate limits`.
 - `main` local : `bc2d5c1` ; le commit Task 2 `43d8c31` est un ancêtre de la branche courante.
-- L’arbre était propre avant cette modification documentaire. Aucun push ni accès distant n’a été fait pour cet audit.
+- Le push autorisé de `task-3-search-journeys` a été tenté mais a échoué : le lancement du Git Credential Manager/Git Bash a retourné `NtCreateDirectoryObject ... 0xC0000022`, puis Git n’a pas pu lire le nom d’utilisateur HTTPS (`fatal: could not read Username for 'https://github.com': No such file or directory`). Aucune PR n’a été ouverte. La page GitHub de la branche indiquait `Ref is invalid` au contrôle ; les résultats Actions ne sont donc pas vérifiables pour cette branche.
+- Les vérifications locales décrites ci-dessous ont été exécutées après le correctif rate limit. Le document est mis à jour avec ce résultat ; il reste à pousser avec la branche.
 
 ### Résultats locaux du 29 octobre 2026
 
 | Vérification | Résultat réel |
 |---|---|
-| Vitest complet avec `node node_modules/vitest/vitest.mjs run` | **PASS** — 41 fichiers, 272 tests. |
-| TypeScript racine, `tsconfig.json` | **PASS**. |
-| TypeScript client, `apps/client/tsconfig.json` | **PASS**. |
-| TypeScript domaine, `packages/domain/tsconfig.json` | **PASS**. |
-| TypeScript API, `apps/api/tsconfig.json` | **PASS**. |
+| Vitest complet avec `node node_modules/vitest/vitest.mjs run` | **PASS** — 41 fichiers, 272 tests, après le correctif d’identité rate limit. |
+| TypeScript racine, `tsconfig.json` | **PASS** — `tsc --noEmit`. |
+| TypeScript client, `apps/client/tsconfig.json` | **PASS** — `tsc --noEmit`. |
+| TypeScript domaine, `packages/domain/tsconfig.json` | **PASS** — `tsc --noEmit`. |
+| TypeScript API, `apps/api/tsconfig.json` | **PASS** — `tsc --noEmit`. |
 | Scan avec `node scripts/check-client-secrets.mjs` | **PASS** — 13 fichiers client et 1 fichier d’environnement racine scannés. |
 | Commandes pnpm récursives / `pnpm typecheck` | **NON TERMINÉES** — les commandes lancées en parallèle sont restées silencieuses et ont été interrompues. Les quatre configurations ont été vérifiées directement avec le TypeScript local. |
 | Validation Neon réelle : migrations, seed, pgTAP, rollback, réapplication | **NON EXÉCUTÉE pendant cet audit** — aucun accès à Neon. |
-| Nouveau job GitHub Actions | **NON EXÉCUTÉ sur GitHub** — aucun push ni accès distant. |
+| Job `workspace-validation` sur GitHub Actions | **NON EXÉCUTÉ** — le push a échoué et aucune PR n’a été créée. |
+| Jobs Neon sur GitHub Actions (migrations, seed, pgTAP, rollback, réapplication) | **NON EXÉCUTÉS / non observés** — aucun run associé à cette branche. |
+| Tentative de push de `task-3-search-journeys` | **FAIL** — lancement de Git Credential Manager/Git Bash bloqué ; Git ne pouvait pas lire le nom d’utilisateur HTTPS. |
+| PR `task-3-search-journeys` vers `main` | **NON CRÉÉE** — la branche n’a pas été publiée. |
 | Appels réels Stadia/géocodeur | **NON EXÉCUTÉS** — les tests utilisent des mocks et dépendances injectées. |
 | Espaces finaux du nouveau document Markdown | **PASS** — contrôle fichier direct, aucun espace final. `git diff --check` a aussi quitté avec code 0 pour les changements suivis. |
 
