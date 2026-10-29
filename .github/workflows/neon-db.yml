@@ -36,23 +36,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run client tests
-        run: pnpm --filter client test
-
       - name: Run domain tests
         run: pnpm --filter @tata/domain test
 
       - name: Run repository script tests
         run: pnpm exec vitest run scripts
 
-      - name: Typecheck client
-        run: pnpm --filter client typecheck
-
       - name: Typecheck domain
         run: pnpm --filter @tata/domain typecheck
 
-      - name: Scan client files for server credentials
-        run: pnpm check:client-secrets
+      - name: Scan app files for server credentials
+        run: pnpm check:app-secrets
 
   neon-db-fork:
     name: Neon validation NOT EXECUTED for fork pull requests
@@ -218,5 +212,5 @@ jobs:
       - name: Run all tests
         run: pnpm exec vitest run
 
-      - name: Scan client files for server credentials
-        run: pnpm check:client-secrets
+      - name: Scan app files for server credentials
+        run: pnpm check:app-secrets

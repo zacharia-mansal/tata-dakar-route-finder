@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const apiDirectory = fileURLToPath(new URL('../apps/api', import.meta.url));
+const projectDirectory = fileURLToPath(new URL('..', import.meta.url));
 
 describe('API workspace typecheck setup', () => {
   it('inherits the strict base config and uses root tools without adding dependencies', () => {
@@ -35,5 +36,16 @@ describe('API workspace typecheck setup', () => {
     expect.soft(packageJson.scripts?.test).toBe('vitest run');
     expect.soft(packageJson.dependencies).toEqual({ '@neondatabase/serverless': '1.2.0' });
     expect.soft(packageJson.devDependencies).toBeUndefined();
+
+    const baseConfig = JSON.parse(
+      readFileSync(`${projectDirectory}/tsconfig.base.json`, 'utf8'),
+    ) as { extends?: string; compilerOptions?: Record<string, unknown> };
+    const rootPackage = JSON.parse(
+      readFileSync(`${projectDirectory}/package.json`, 'utf8'),
+    ) as { devDependencies?: Record<string, string> };
+
+    expect.soft(baseConfig.extends).toBeUndefined();
+    expect.soft(JSON.stringify(baseConfig)).not.toMatch(/\bexpo(?:\/|\b)/i);
+    expect.soft(rootPackage.devDependencies?.expo).toBeUndefined();
   });
 });
