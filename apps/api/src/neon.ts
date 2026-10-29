@@ -32,7 +32,7 @@ export interface PublishedNetworkRow {
   verified_at: string;
   stops: TransitStop[];
   served_places: PublishedServedPlaceRow[];
-  route_shape: unknown;
+  route_shape?: unknown;
 }
 
 export interface PublishedServedPlace extends ServedPlace, Pick<PlaceCandidate, 'displayName' | 'coordinates' | 'source'> {
