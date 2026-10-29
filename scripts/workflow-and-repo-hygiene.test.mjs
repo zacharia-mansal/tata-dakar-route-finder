@@ -65,6 +65,28 @@ describe('Neon workflow security and reliability', () => {
     expect(workflow.jobs['neon-db-fork'].steps.every((step) => !step.env?.NEON_API_KEY && !step.env?.NEON_PROJECT_ID)).toBe(true);
   });
 
+  it('runs secret-free workspace validation on every pull request, including forks', () => {
+    const job = workflow.jobs['workspace-validation'];
+
+    expect(job).toBeTruthy();
+    expect(job.if).toBeUndefined();
+    expect(job.needs).toBeUndefined();
+    expect(job.environment).toBeUndefined();
+    expect(job.permissions).toEqual({ contents: 'read' });
+
+    const serializedJob = JSON.stringify(job);
+    expect(serializedJob).not.toMatch(/secrets\.|\bNEON_[A-Z0-9_]+\b|\bDATABASE_URL\b|\bSTADIA_ROUTING_API_KEY\b/i);
+
+    const commands = job.steps.filter((step) => step.run).map((step) => step.run.trim());
+    expect(commands).toEqual([
+      'pnpm install --frozen-lockfile',
+      'pnpm -r typecheck',
+      'pnpm typecheck',
+      'pnpm exec vitest run',
+      'pnpm check:client-secrets',
+    ]);
+  });
+
   it('pins each remaining external action to a 40-character commit SHA', () => {
     const uses = Object.values(workflow.jobs)
       .flatMap((job) => job.steps ?? [])
@@ -76,7 +98,7 @@ describe('Neon workflow security and reliability', () => {
       expect(action).toMatch(/^[^@]+@[0-9a-f]{40}(?:\s+#.*)?$/i);
     }
 
-    expect(uses.filter((action) => action === 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413').length).toBe(2);
+    expect(uses.filter((action) => action === 'pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413').length).toBe(3);
     expect(uses).toContain('neondatabase/create-branch-action@153375631fc0f99cf0113e0cef877850452e6ca2');
     expect(uses.some((action) => action.startsWith('neondatabase/delete-branch-action@'))).toBe(false);
     expect(uses).toContain('actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683');
@@ -89,7 +111,7 @@ describe('Neon workflow security and reliability', () => {
     const createBranch = workflow.jobs['neon-db'].steps.find((step) => step.id === 'neon');
     const deleteBranch = workflow.jobs['neon-db'].steps.find((step) => step.name?.includes('Delete temporary Neon branch'));
 
-    expect(pnpmSteps).toHaveLength(2);
+    expect(pnpmSteps).toHaveLength(3);
     expect(pnpmSteps.every((step) => !Object.hasOwn(step.with ?? {}, 'version'))).toBe(true);
     expect(createBranch.with).toMatchObject({
       project_id: '${{ secrets.NEON_PROJECT_ID }}',

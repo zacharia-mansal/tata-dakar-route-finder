@@ -99,3 +99,34 @@ Le workflow masque l’URL de connexion directe générée avant de la transmett
 Les tables sources conservent RLS activé et n’ont aucune politique de lecture publique. Le rôle API ne reçoit aucun accès direct aux tables; il peut lire uniquement la vue filtrée, qui ne renvoie que les lignes, directions, arrêts, lieux desservis, alias et formulations vérifiés et publiés. Une destination recherchée peut rester distincte de la zone desservie et du libellé affiché par le bus. Chaque direction garde son propre ordre d’arrêts.
 
 Ne donnez jamais à l’application mobile une chaîne PostgreSQL (`DATABASE_URL`), un mot de passe Neon ou un rôle de migration. L’endpoint Expo doit pointer vers l’API HTTPS, qui valide et limite les requêtes avant de lire le catalogue avec son rôle serveur en lecture seule.
+
+## Créer le rôle de connexion de l’API
+
+Le rôle `tata_public_api` est créé manuellement par un propriétaire de la base, après application des migrations. Aucune migration ne le crée. Il doit seulement hériter des droits de lecture de `tata_catalog_reader` et lire la vue publiée ; il ne reçoit pas de droits directs sur les tables du catalogue.
+
+Exécutez une seule fois le SQL suivant dans la bonne base Neon. La limite `10` est un exemple, pas une valeur décidée : remplacez-la par la limite de connexions retenue pour le compute et la concurrence attendue de Vercel.
+
+```sql
+CREATE ROLE tata_public_api LOGIN;
+GRANT tata_catalog_reader TO tata_public_api;
+ALTER ROLE tata_public_api CONNECTION LIMIT 10;
+ALTER ROLE tata_public_api SET statement_timeout = '4s';
+ALTER ROLE tata_public_api SET lock_timeout = '1s';
+```
+
+Définissez le mot de passe séparément au moyen d’un parcours sécurisé, par exemple avec la commande interactive `\password tata_public_api` dans `psql`. N’écrivez jamais le mot de passe dans le dépôt, une migration, une commande journalisée ou un message. La connexion poolée de ce rôle est stockée uniquement dans la variable serveur Vercel `DATABASE_URL_PUBLIC_API`, jamais dans Expo.
+
+`statement_timeout` arrête une instruction SQL qui dépasse quatre secondes ; `lock_timeout` limite à une seconde chaque attente de verrou. Ces délais complètent l’échéance applicative de dix secondes. Les valeurs configurées par `ALTER ROLE ... SET` s’appliquent lors de l’ouverture d’une nouvelle session : après une modification, ouvrez une nouvelle connexion. Neon utilise PgBouncer en mode transaction pour les connexions poolées ; ne comptez pas sur un `SET` de session envoyé dans une requête pour survivre à la transaction suivante. Contrôlez les valeurs effectives en vous connectant avec `tata_public_api` via la connexion poolée utilisée par l’API :
+
+```sql
+SELECT
+  current_user AS role_name,
+  pg_catalog.current_setting('statement_timeout') AS statement_timeout,
+  pg_catalog.current_setting('lock_timeout') AS lock_timeout,
+  pg_catalog.pg_has_role(current_user, 'tata_catalog_reader', 'MEMBER') AS is_catalog_reader,
+  role_row.rolconnlimit AS connection_limit
+FROM pg_catalog.pg_roles AS role_row
+WHERE role_row.rolname = current_user;
+```
+
+La requête doit retourner `tata_public_api`, les délais attendus, l’appartenance au rôle lecteur et la limite de connexions choisie. Les tests pgTAP de `db/tests/transit_catalog_rls.test.sql` vérifient les droits sur la vue et les tables sources. Références : [Neon — Connection pooling](https://neon.com/docs/connect/connection-pooling), [PostgreSQL — ALTER ROLE](https://www.postgresql.org/docs/current/sql-alterrole.html), [PostgreSQL — délais de requête et de verrou](https://www.postgresql.org/docs/current/runtime-config-client.html).

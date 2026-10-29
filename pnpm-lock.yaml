@@ -27,6 +27,12 @@ importers:
         specifier: ^4.0.0
         version: 4.1.12(@types/node@24.19.2)(jsdom@27.4.0(supports-color@8.1.1))(vite@8.3.5(@types/node@24.19.2)(terser@5.51.2))
 
+  apps/api:
+    dependencies:
+      '@neondatabase/serverless':
+        specifier: 1.2.0
+        version: 1.2.0
+
   apps/client:
     dependencies:
       '@maplibre/maplibre-react-native':
@@ -49,7 +55,7 @@ importers:
         version: 58.0.5(expo@58.0.17)(react@19.3.0)
       expo-router:
         specifier: ~58.0.20
-        version: 58.0.25(0ccb7e80fb594b5b9440a59228f84dfc)
+        version: 58.0.25(26d51718fb3f02759a87385c90e14146)
       expo-status-bar:
         specifier: ~58.0.4
         version: 58.0.4(expo@58.0.17)(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
@@ -847,6 +853,10 @@ packages:
 
   '@maplibre/vt-pbf@4.3.2':
     resolution: {integrity: sha512-j6p0AdjvAR19Z3XaCysle7A4ZSo08tYOzxD0Y9NQylwPAkwJJeYub5b2eVucdeDh7erhv69DahoLOevDRERRUw==}
+
+  '@neondatabase/serverless@1.2.0':
+    resolution: {integrity: sha512-tnaqgixUengZQNd9ZrS3ytQfamJzLKY8QxgqWQTNHHtB+KrFQWk77JTbbpg4RD+J3qE4eO2lVytvGDX5Kj6FdQ==}
+    engines: {node: '>=19.0.0'}
 
   '@noxcturnal/noxcturnal-darwin-arm64@0.1.8':
     resolution: {integrity: sha512-IaKvOx7pb7nr+OQ4rm6VKO4z4a7BfqBrvxcDYfvtOHRq9yVylrph0crkWJRgxskGlaBrLMrNiWYHvFqrd0hRSA==}
@@ -3822,7 +3832,7 @@ snapshots:
       ws: 8.22.0
       zod: 3.25.76
     optionalDependencies:
-      expo-router: 58.0.25(0ccb7e80fb594b5b9440a59228f84dfc)
+      expo-router: 58.0.25(26d51718fb3f02759a87385c90e14146)
       react-native: 0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
     transitivePeerDependencies:
       - '@expo/dom-webview'
@@ -4123,7 +4133,7 @@ snapshots:
       react: 19.3.0
     optionalDependencies:
       '@expo/metro-runtime': 58.0.15(@expo/log-box@58.0.13)(expo@58.0.17)(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
-      expo-router: 58.0.25(0ccb7e80fb594b5b9440a59228f84dfc)
+      expo-router: 58.0.25(26d51718fb3f02759a87385c90e14146)
       react-dom: 19.3.0(react@19.3.0)
     transitivePeerDependencies:
       - supports-color
@@ -4246,6 +4256,8 @@ snapshots:
       '@mapbox/point-geometry': 1.1.0
       '@types/geojson': 7946.0.16
       pbf: 5.1.2
+
+  '@neondatabase/serverless@1.2.0': {}
 
   '@noxcturnal/noxcturnal-darwin-arm64@0.1.8':
     optional: true
@@ -5227,7 +5239,7 @@ snapshots:
       '@expo/modules-macros-win32-arm64': 0.22.0
       '@expo/modules-macros-win32-x64': 0.22.0
 
-  expo-router@58.0.25(0ccb7e80fb594b5b9440a59228f84dfc):
+  expo-router@58.0.25(26d51718fb3f02759a87385c90e14146):
     dependencies:
       '@expo/log-box': 58.0.13(@expo/dom-webview@58.0.2)(expo@58.0.17)(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       '@expo/metro-runtime': 58.0.15(@expo/log-box@58.0.13)(expo@58.0.17)(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)

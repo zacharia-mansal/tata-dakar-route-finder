@@ -63,6 +63,38 @@ describe('findClientSecretLeaks', () => {
     expect(findings.map(({ rule }) => rule)).toContain('expo-public-secret');
   });
 
+  it('flags the server-only memory rate-limit setting in client code and Expo public env', () => {
+    const clientFindings = findClientSecretLeaks(
+      'const enabled = process.env.ALLOW_MEMORY_RATE_LIMIT;',
+      clientFile,
+    );
+    const expoFindings = findExpoPublicEnvLeaks(
+      'EXPO_PUBLIC_ALLOW_MEMORY_RATE_LIMIT=1',
+      '.env.local',
+    );
+
+    expect(clientFindings.map(({ rule }) => rule)).toContain('server-only-env-reference');
+    expect(expoFindings.map(({ rule }) => rule)).toContain('server-only-env-reference');
+  });
+
+  it('flags the public database URL reference in client code', () => {
+    const findings = findClientSecretLeaks(
+      'const database = process.env.DATABASE_URL_PUBLIC_API;',
+      clientFile,
+    );
+
+    expect(findings.map(({ rule }) => rule)).toContain('database-url');
+  });
+
+  it('flags the private Stadia routing key reference in client code', () => {
+    const findings = findClientSecretLeaks(
+      'const routingKey = process.env.STADIA_ROUTING_API_KEY;',
+      clientFile,
+    );
+
+    expect(findings.map(({ rule }) => rule)).toContain('server-only-env-reference');
+  });
+
   it('does not include secret values in finding messages or serialized reports', () => {
     const secrets = ['fixture-auth-value', 'fixture-url-value', 'fixture-expo-value'];
     const databaseVariable = ['DATABASE', '_URL'].join('');
@@ -93,6 +125,22 @@ describe('findExpoPublicEnvLeaks', () => {
     ].join('\n');
 
     expect(findExpoPublicEnvLeaks(source, '.env.example')).toEqual([]);
+  });
+
+  it('rejects public-prefixed server database and Stadia routing key names', () => {
+    const findings = findExpoPublicEnvLeaks(
+      [
+        'EXPO_PUBLIC_DATABASE_URL_PUBLIC_API=',
+        'EXPO_PUBLIC_STADIA_ROUTING_API_KEY=',
+      ].join('\n'),
+      '.env.local',
+    );
+
+    expect(findings.map(({ rule }) => rule)).toContain('expo-public-secret');
+  });
+
+  it('keeps the existing public Stadia map key allowed', () => {
+    expect(findExpoPublicEnvLeaks('EXPO_PUBLIC_STADIA_API_KEY=', '.env.example')).toEqual([]);
   });
 
   it('rejects server-only key names exposed through Expo public env', () => {
