@@ -19,7 +19,16 @@ describe('published Neon network reader', () => {
     const rows = [{
       line_id: 'line-24', line_number: '24', direction_id: '24-out', direction_name: 'Castor vers Université',
       displayed_destination_label: 'Université', receiver_question: 'Question vérifiée', verified_at: '2026-10-22T12:00:00.000Z',
-      stops: [], served_places: [], route_shape: null,
+      stops: [
+        { id: 'castor', name: 'Castor', coordinates: { lat: 14.707, lon: -17.451 }, aliases: [] },
+        { id: 'university', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
+      ],
+      served_places: [{
+        place_id: 'ism', display_name: 'Institut Supérieur de Management', area_name: 'Université',
+        coordinates: { lat: 14.696, lon: -17.463 }, alighting_stop_id: 'university',
+        verified_at: '2026-10-22T12:00:00.000Z', aliases: [],
+      }],
+      route_shape: null,
     }];
     const query = vi.fn().mockResolvedValue(rows);
     const reader = createPublishedNetworkReader({ connectionString: 'fixture-connection-value', query });

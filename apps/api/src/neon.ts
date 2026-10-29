@@ -54,6 +54,85 @@ export type PublishedNetworkQuery = (
   queryOptions?: NeonFetchOptions,
 ) => Promise<unknown[]>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isValidDateText(value: unknown): value is string {
+  return isNonEmptyText(value) && Number.isFinite(Date.parse(value));
+}
+
+function isCoordinatePair(value: unknown): value is Coordinates {
+  if (!isRecord(value)) return false;
+  const { lat, lon } = value;
+  return (
+    typeof lat === 'number' && Number.isFinite(lat) && lat >= -90 && lat <= 90 &&
+    typeof lon === 'number' && Number.isFinite(lon) && lon >= -180 && lon <= 180
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isPublishedStop(value: unknown): value is TransitStop {
+  return (
+    isRecord(value) &&
+    isNonEmptyText(value.id) &&
+    isNonEmptyText(value.name) &&
+    isCoordinatePair(value.coordinates) &&
+    isStringArray(value.aliases)
+  );
+}
+
+function isPublishedServedPlace(value: unknown): value is PublishedServedPlaceRow {
+  return (
+    isRecord(value) &&
+    isNonEmptyText(value.place_id) &&
+    isNonEmptyText(value.display_name) &&
+    isNonEmptyText(value.area_name) &&
+    isNonEmptyText(value.alighting_stop_id) &&
+    isValidDateText(value.verified_at) &&
+    isCoordinatePair(value.coordinates) &&
+    isStringArray(value.aliases)
+  );
+}
+
+function isPublishedNetworkRow(value: unknown): value is PublishedNetworkRow {
+  if (
+    !isRecord(value) ||
+    !isNonEmptyText(value.line_id) ||
+    !isNonEmptyText(value.line_number) ||
+    !isNonEmptyText(value.direction_id) ||
+    !isNonEmptyText(value.direction_name) ||
+    !isNonEmptyText(value.displayed_destination_label) ||
+    !isNonEmptyText(value.receiver_question) ||
+    !isValidDateText(value.verified_at) ||
+    !Array.isArray(value.stops) || value.stops.length < 2 ||
+    !Array.isArray(value.served_places) || value.served_places.length < 1
+  ) {
+    return false;
+  }
+
+  if (!value.stops.every(isPublishedStop)) return false;
+  const stopIds = new Set(value.stops.map((stop) => stop.id));
+  if (stopIds.size !== value.stops.length) return false;
+  if (!value.served_places.every(isPublishedServedPlace)) return false;
+
+  return value.served_places.every((place) => stopIds.has(place.alighting_stop_id));
+}
+
+function validatePublishedNetworkRows(rows: unknown): PublishedNetworkRow[] {
+  if (!Array.isArray(rows) || !rows.every(isPublishedNetworkRow)) {
+    throw new Error('Invalid published network result');
+  }
+  return rows;
+}
+
 function mapServedPlace(row: PublishedServedPlaceRow, directionId: string): PublishedServedPlace {
   return {
     id: row.place_id,
@@ -69,8 +148,8 @@ function mapServedPlace(row: PublishedServedPlaceRow, directionId: string): Publ
   };
 }
 
-function mapPublishedNetworkRows(rows: unknown[]): PublishedTransitNetworkSnapshot {
-  const typedRows = rows as PublishedNetworkRow[];
+function mapPublishedNetworkRows(rows: unknown): PublishedTransitNetworkSnapshot {
+  const typedRows = validatePublishedNetworkRows(rows);
   const directions: TransitDirection[] = typedRows.map((row) => ({
     id: row.direction_id,
     lineNumber: row.line_number,
@@ -92,7 +171,11 @@ function mapPublishedNetworkRows(rows: unknown[]): PublishedTransitNetworkSnapsh
   };
 }
 
-/** Reads only the published, schema-qualified network view through Neon HTTP. */
+/**
+ * Reads only the published, schema-qualified network view through Neon HTTP.
+ * Publication is guaranteed by the WHERE filters in
+ * db/migrations/20261022000200_expose_verified_catalog.sql, not by runtime status fields.
+ */
 export function createPublishedNetworkReader(options: {
   connectionString?: string;
   query?: PublishedNetworkQuery;

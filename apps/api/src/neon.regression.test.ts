@@ -17,7 +17,10 @@ const fixtureRows = [{
   displayed_destination_label: 'Université',
   receiver_question: 'Est-ce que ça va vers l’Université ?',
   verified_at: '2026-10-22T12:00:00.000Z',
-  stops: [{ id: 'university', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] }],
+  stops: [
+    { id: 'castor', name: 'Castor', coordinates: { lat: 14.707, lon: -17.451 }, aliases: [] },
+    { id: 'university', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
+  ],
   served_places: [{
     place_id: 'ism',
     display_name: 'Institut Supérieur de Management',
