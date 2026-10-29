@@ -56,6 +56,7 @@ function request(url: string, body: unknown, ip = '198.51.100.24', extraHeaders:
     headers: {
       'content-type': 'application/json',
       'x-forwarded-for': ip,
+      'x-vercel-forwarded-for': ip,
       ...extraHeaders,
     },
     body: JSON.stringify(body),
@@ -181,6 +182,32 @@ describe('per-endpoint rate limit quotas', () => {
     expect(firstClientSecond.status).toBe(429);
     expect(secondClientFirst.status).toBe(200);
   });
+
+  it.each(['resolve-places', 'search-routes'] as const)(
+    'uses Vercel forwarded client IP for %s despite a client-supplied x-forwarded-for',
+    async (endpointName) => {
+      const store = makeStore();
+      const env = { VERCEL_ENV: 'preview' };
+      const resolveFixture = endpointName === 'resolve-places'
+        ? resolveEndpoint(env, store.store)
+        : undefined;
+      const searchFixture = endpointName === 'search-routes'
+        ? searchEndpoint(env, store.store)
+        : undefined;
+      const handler = resolveFixture?.handler ?? searchFixture!.handler;
+      const url = `https://api.example.test/api/${endpointName}`;
+      const body = endpointName === 'resolve-places' ? resolveBody : searchBody;
+
+      const response = await handler(request(url, body, '203.0.113.77', {
+        'x-vercel-forwarded-for': '198.51.100.42',
+      }));
+
+      expect(response.status).toBe(200);
+      expect(store.increment.mock.calls[0]?.[0]).toMatch(
+        new RegExp(`^${endpointName}:198\\.51\\.100\\.42:\\d+$`),
+      );
+    },
+  );
 
   it('does not let a saturated search-routes budget consume resolve-places quota in the same shared store', async () => {
     const store = makeStore().store;

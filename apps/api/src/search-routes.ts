@@ -288,9 +288,8 @@ async function handleRequest(
   const body = validation.body;
   setLocale(body.locale);
 
-  // Vercel overwrites x-forwarded-for to prevent spoofing; never trust client-controlled x-real-ip.
-  const forwardedFor = request.headers.get('x-forwarded-for');
-  const clientKey = forwardedFor?.split(',')[0]?.trim() || 'unknown';
+  // Vercel documents this as its forwarded client IP header; do not derive identity from client-supplied x-forwarded-for.
+  const clientKey = request.headers.get('x-vercel-forwarded-for')?.trim() || 'unknown';
   const rateLimit = await dependencies.rateLimit.check(clientKey, { signal });
   if (rateLimit.unavailable) return localizedServiceUnavailable(body.locale);
   if (!rateLimit.allowed) {

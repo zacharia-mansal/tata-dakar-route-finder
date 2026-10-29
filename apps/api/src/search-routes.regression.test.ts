@@ -131,10 +131,11 @@ describe('search-routes targeted regressions', () => {
     expect(cancelled).toBe(true);
   });
 
-  it('uses the Vercel x-forwarded-for client address and ignores x-real-ip', async () => {
+  it('uses the Vercel x-vercel-forwarded-for client address and ignores client-supplied IP headers', async () => {
     const deps = dependencies();
     await createSearchRoutesHandler(deps)(post(validBody, {
-      'x-forwarded-for': '198.51.100.24, 10.0.0.12',
+      'x-vercel-forwarded-for': '198.51.100.24',
+      'x-forwarded-for': '192.0.2.17, 10.0.0.12',
       'x-real-ip': '203.0.113.99',
     }));
 
@@ -144,7 +145,7 @@ describe('search-routes targeted regressions', () => {
     );
   });
 
-  it('does not trust x-real-ip when Vercel x-forwarded-for is absent', async () => {
+  it('does not trust x-real-ip when Vercel x-vercel-forwarded-for is absent', async () => {
     const deps = dependencies();
     await createSearchRoutesHandler(deps)(post(validBody, { 'x-real-ip': '203.0.113.99' }));
 

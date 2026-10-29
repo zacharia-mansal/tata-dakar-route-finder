@@ -157,8 +157,8 @@ export function createResolvePlacesEndpoint(options: ResolvePlacesEndpointOption
     if (!policy.rateLimit) return localizedUnavailable(locale);
 
     try {
-      const forwardedFor = request.headers.get('x-forwarded-for');
-      const clientKey = forwardedFor?.split(',')[0]?.trim() || 'unknown';
+      // Vercel documents this as its forwarded client IP header; do not derive identity from client-supplied x-forwarded-for.
+      const clientKey = request.headers.get('x-vercel-forwarded-for')?.trim() || 'unknown';
       const rateLimit = await policy.rateLimit.check(clientKey, { signal });
       if (rateLimit.unavailable) return localizedUnavailable(locale);
       if (!rateLimit.allowed) {
