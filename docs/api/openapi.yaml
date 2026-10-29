@@ -1,0 +1,735 @@
+openapi: 3.1.0
+info:
+  title: Dakar Tata Route Finder API
+  version: 1.0.0
+  description: >-
+    Public HTTP contract for resolving places and searching verified Tata journeys.
+servers:
+  - url: https://{host}
+    description: API deployment
+    variables:
+      host:
+        default: api.example.test
+paths:
+  /api/resolve-places:
+    post:
+      operationId: resolvePlaces
+      summary: Resolve a place name to published or geocoded candidates
+      description: >-
+        Returns every matching candidate. When the result is ambiguous, the client
+        must ask the user to select a candidate instead of choosing one automatically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolvePlacesRequest'
+      responses:
+        '200':
+          description: Matching or ambiguous place candidates.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PlaceMatches'
+                  - $ref: '#/components/schemas/AmbiguousPlaces'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/RequestTimeout'
+  /api/search-routes:
+    post:
+      operationId: searchRoutes
+      summary: Search for complete, verified Tata journeys
+      description: >-
+        A selected catalogue place is submitted by its id. A geocoder place includes
+        its coordinates and display label. Search results contain only journeys with
+        every required walking segment calculated. Partial results state why other
+        candidates were excluded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRoutesRequest'
+      responses:
+        '200':
+          description: Complete routes, partial routes, or no verified journey.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CompleteRoutesResult'
+                  - $ref: '#/components/schemas/PartialRoutesResult'
+                  - $ref: '#/components/schemas/NoVerifiedJourney'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: A selected catalogue place could not be found.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OriginNotFound'
+                  - $ref: '#/components/schemas/DestinationNotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '413':
+          $ref: '#/components/responses/RequestTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          description: A required service or shared rate-limit store is unavailable.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ServiceUnavailableError'
+                  - $ref: '#/components/schemas/PartialSearchError'
+              examples:
+                serviceUnavailableFr:
+                  summary: Service unavailable, French
+                  value:
+                    error: service_unavailable
+                    message: La recherche d’itinéraire est temporairement indisponible.
+                walkingServiceErrorEn:
+                  summary: Walking service error, English
+                  value:
+                    error: service_unavailable
+                    message: Route search is temporarily unavailable.
+                    partial: true
+                    partialReason: walking_service_error
+        '504':
+          $ref: '#/components/responses/RequestTimeout'
+components:
+  schemas:
+    Locale:
+      type: string
+      enum: [fr, en]
+      description: French is the default interface language; English is also supported.
+    Coordinates:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+      additionalProperties: false
+    InputCoordinates:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat:
+          type: number
+          minimum: -90
+          maximum: 90
+        lon:
+          type: number
+          minimum: -180
+          maximum: 180
+      description: >-
+        Input coordinates are validated by latitude and longitude; unknown
+        properties are ignored by the request handlers.
+    ResolvePlacesRequest:
+      type: object
+      required: [query, locale]
+      properties:
+        query:
+          type: string
+          description: >-
+            The handler trims leading and trailing whitespace before validation,
+            rejects a blank result, and enforces a maximum of 200 JavaScript
+            UTF-16 code units after trimming. Catalogue matching normalizes the
+            query to Unicode NFC. The JSON Schema deliberately does not constrain
+            the unnormalized input length. The handler does not explicitly reject
+            other control characters in this field.
+        locale:
+          $ref: '#/components/schemas/Locale'
+    CoordinateOrigin:
+      type: object
+      required: [kind, coordinates]
+      properties:
+        kind:
+          const: coordinates
+        coordinates:
+          $ref: '#/components/schemas/InputCoordinates'
+    CataloguePlaceSelection:
+      type: object
+      required: [source, id]
+      properties:
+        source:
+          const: catalogue
+        id:
+          type: string
+          description: >-
+            The handler trims the identifier before validation, rejects an empty
+            result, and enforces a maximum of 200 JavaScript UTF-16 code units
+            after trimming. The schema intentionally does not constrain the raw
+            string length. Unknown properties are ignored by the handler.
+    GeocoderPlaceSelection:
+      type: object
+      required: [source, coordinates, displayName]
+      properties:
+        source:
+          const: geocoder
+        coordinates:
+          $ref: '#/components/schemas/DakarMetropolitanGeocoderCoordinates'
+        displayName:
+          type: string
+          description: >-
+            Display-only label; it is never used to resolve or rank the place.
+            At runtime it is normalized to Unicode NFC, rejected if it contains
+            Unicode control, format, line-separator, or paragraph-separator
+            characters, then trimmed. The trimmed value must be non-empty and
+            contain at most 120 Unicode code points. These checks apply after
+            normalization and trimming, so the schema does not constrain the raw
+            input string.
+    DakarMetropolitanGeocoderCoordinates:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat:
+          type: number
+          minimum: 14.55
+          maximum: 14.9
+        lon:
+          type: number
+          minimum: -17.6
+          maximum: -17.05
+      description: >-
+        Coarse application-side abuse guard for geocoder selections only. It is
+        not a precise geographic boundary or a security boundary, and is never
+        applied to catalogue places.
+    SearchRoutesRequest:
+      type: object
+      required: [origin, destination, locale]
+      properties:
+        origin:
+          oneOf:
+            - $ref: '#/components/schemas/CoordinateOrigin'
+            - $ref: '#/components/schemas/CataloguePlaceSelection'
+            - $ref: '#/components/schemas/GeocoderPlaceSelection'
+        destination:
+          oneOf:
+            - $ref: '#/components/schemas/CataloguePlaceSelection'
+            - $ref: '#/components/schemas/GeocoderPlaceSelection'
+        locale:
+          $ref: '#/components/schemas/Locale'
+    PlaceCandidate:
+      type: object
+      required: [id, displayName, areaName, coordinates, source]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          minLength: 1
+        areaName:
+          type: string
+          minLength: 1
+        coordinates:
+          $ref: '#/components/schemas/Coordinates'
+        source:
+          type: string
+          enum: [catalogue, geocoder]
+        matchedAlias:
+          type: string
+      additionalProperties: false
+    PublishedPlaceCandidate:
+      type: object
+      required:
+        [id, displayName, areaName, coordinates, source, placeId, directionId, alightingStopId, verifiedAt, aliases]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        displayName:
+          type: string
+          minLength: 1
+        areaName:
+          type: string
+          minLength: 1
+        coordinates:
+          $ref: '#/components/schemas/Coordinates'
+        source:
+          type: string
+          enum: [catalogue, geocoder]
+        matchedAlias:
+          type: string
+        placeId:
+          type: string
+          minLength: 1
+        directionId:
+          type: string
+          minLength: 1
+        alightingStopId:
+          type: string
+          minLength: 1
+        verifiedAt:
+          type: string
+          format: date-time
+        aliases:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    SearchResultPlace:
+      oneOf:
+        - $ref: '#/components/schemas/PlaceCandidate'
+        - $ref: '#/components/schemas/PublishedPlaceCandidate'
+    TransitStop:
+      type: object
+      required: [id, name, coordinates, aliases]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+        coordinates:
+          $ref: '#/components/schemas/Coordinates'
+        aliases:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    WalkSegment:
+      type: object
+      required: [distanceMeters, instructions, coordinates]
+      properties:
+        distanceMeters:
+          type: number
+          minimum: 0
+        instructions:
+          type: array
+          items:
+            type: string
+        coordinates:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Coordinates'
+      additionalProperties: false
+    TransitLeg:
+      type: object
+      required:
+        [directionId, lineNumber, directionName, boardingStop, alightingStop, orderedStops, displayedDestinationLabel, receiverQuestion]
+      properties:
+        directionId:
+          type: string
+          minLength: 1
+        lineNumber:
+          type: string
+          minLength: 1
+        directionName:
+          type: string
+          minLength: 1
+        boardingStop:
+          $ref: '#/components/schemas/TransitStop'
+        alightingStop:
+          $ref: '#/components/schemas/TransitStop'
+        orderedStops:
+          type: array
+          minItems: 2
+          items:
+            $ref: '#/components/schemas/TransitStop'
+        displayedDestinationLabel:
+          type: string
+          minLength: 1
+          description: Destination name displayed on the bus for this direction.
+        receiverQuestion:
+          type: string
+          minLength: 1
+          description: Localized question the passenger can ask the bus receiver.
+        walkBefore:
+          $ref: '#/components/schemas/WalkSegment'
+      additionalProperties: false
+    JourneyGeometrySegment:
+      oneOf:
+        - type: object
+          required: [kind, coordinates]
+          properties:
+            kind:
+              const: walk
+            coordinates:
+              type: array
+              items:
+                $ref: '#/components/schemas/Coordinates'
+          additionalProperties: false
+        - type: object
+          required: [kind, coordinates, lineNumber]
+          properties:
+            kind:
+              const: tata
+            coordinates:
+              type: array
+              items:
+                $ref: '#/components/schemas/Coordinates'
+            lineNumber:
+              type: string
+              minLength: 1
+          additionalProperties: false
+    JourneyGeometry:
+      type: object
+      required: [segments, bounds]
+      properties:
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/JourneyGeometrySegment'
+        bounds:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: number
+          description: [west, south, east, north]
+      additionalProperties: false
+    JourneyOption:
+      type: object
+      required:
+        [id, origin, searchedDestination, servedAreaName, legs, finalWalk, transferCount, totalWalkMeters, verifiedAt, geometry]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        origin:
+          anyOf:
+            - $ref: '#/components/schemas/Coordinates'
+            - $ref: '#/components/schemas/PlaceCandidate'
+        searchedDestination:
+          $ref: '#/components/schemas/PlaceCandidate'
+        servedAreaName:
+          type: string
+          minLength: 1
+        legs:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/TransitLeg'
+        finalWalk:
+          $ref: '#/components/schemas/WalkSegment'
+        transferCount:
+          type: integer
+          minimum: 0
+        totalWalkMeters:
+          type: number
+          minimum: 0
+        verifiedAt:
+          type: string
+          format: date-time
+        geometry:
+          $ref: '#/components/schemas/JourneyGeometry'
+      additionalProperties: false
+    PlaceMatches:
+      type: object
+      required: [kind, places]
+      properties:
+        kind:
+          const: matches
+        places:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaceCandidate'
+      additionalProperties: false
+    AmbiguousPlaces:
+      type: object
+      required: [kind, places]
+      properties:
+        kind:
+          const: ambiguous
+        places:
+          type: array
+          minItems: 2
+          items:
+            $ref: '#/components/schemas/PlaceCandidate'
+      additionalProperties: false
+    CompleteRoutesResult:
+      type: object
+      required: [kind, places, routes]
+      properties:
+        kind:
+          const: routes
+        places:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultPlace'
+        routes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/JourneyOption'
+      additionalProperties: false
+    PartialRoutesResult:
+      type: object
+      required: [kind, places, routes, partial, partialReason]
+      properties:
+        kind:
+          const: routes
+        places:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultPlace'
+        routes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/JourneyOption'
+        partial:
+          const: true
+        partialReason:
+          type: string
+          enum: [call_limit, deadline, walking_service_error]
+          description: Candidates may be omitted for the stated reason.
+      additionalProperties: false
+    NoVerifiedJourney:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          const: no_verified_journey
+      additionalProperties: false
+    ErrorBody:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+          minLength: 1
+          description: French or English message selected from the request locale or Accept-Language.
+      additionalProperties: false
+    InvalidRequestError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: invalid_request
+        message:
+          type: string
+          enum: [Recherche de lieu invalide., Invalid place search., Requête invalide., Invalid request.]
+      additionalProperties: false
+    InvalidJsonError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: invalid_json
+        message:
+          type: string
+          enum: [Requête JSON invalide., Invalid request.]
+      additionalProperties: false
+    InvalidPlaceNameError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: invalid_place_name
+        message:
+          type: string
+          enum: [Nom de lieu invalide., Invalid place name.]
+      additionalProperties: false
+    BadRequestError:
+      oneOf:
+        - $ref: '#/components/schemas/InvalidRequestError'
+        - $ref: '#/components/schemas/InvalidJsonError'
+        - $ref: '#/components/schemas/InvalidPlaceNameError'
+    MethodNotAllowedError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: method_not_allowed
+        message:
+          type: string
+          enum: [Méthode non autorisée., Method not allowed.]
+      additionalProperties: false
+    RequestTooLargeError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: request_too_large
+        message:
+          type: string
+          enum: [La requête est trop volumineuse., Request body is too large.]
+      additionalProperties: false
+    RateLimitedError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: rate_limited
+        message:
+          type: string
+          enum: [Trop de requêtes. Veuillez réessayer plus tard., Too many requests. Please try again later.]
+      additionalProperties: false
+    ServiceUnavailableError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: service_unavailable
+        message:
+          type: string
+          enum:
+            [La recherche de lieux est temporairement indisponible., Place search is temporarily unavailable., La recherche d’itinéraire est temporairement indisponible., Route search is temporarily unavailable.]
+      additionalProperties: false
+    PartialSearchError:
+      type: object
+      required: [error, message, partial, partialReason]
+      properties:
+        error:
+          const: service_unavailable
+        message:
+          type: string
+          enum: [La recherche de trajet est temporairement indisponible., Route search is temporarily unavailable.]
+        partial:
+          const: true
+        partialReason:
+          const: walking_service_error
+      additionalProperties: false
+    InternalError:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          const: internal_error
+        message:
+          type: string
+          enum: [La recherche de lieux a échoué. Veuillez réessayer., Place search failed. Please try again., La recherche d’itinéraire a échoué. Veuillez réessayer., Route search failed. Please try again.]
+      additionalProperties: false
+    RequestTimeoutError:
+      type: object
+      required: [error, message, partial, partialReason]
+      properties:
+        error:
+          const: request_timeout
+        message:
+          type: string
+          enum: [La recherche a expiré., The search timed out.]
+        partial:
+          const: true
+        partialReason:
+          const: deadline
+      additionalProperties: false
+    OriginNotFound:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          const: origin_not_found
+      additionalProperties: false
+    DestinationNotFound:
+      type: object
+      required: [kind, places]
+      properties:
+        kind:
+          const: not_found
+        places:
+          type: array
+          maxItems: 0
+      additionalProperties: false
+  responses:
+    BadRequest:
+      description: Invalid JSON or request fields. The message is localized in French or English.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BadRequestError'
+          examples:
+            invalidRequestFr:
+              value: {error: invalid_request, message: Recherche de lieu invalide.}
+            invalidRequestEn:
+              value: {error: invalid_request, message: Invalid place search.}
+            invalidPlaceNameFr:
+              value: {error: invalid_place_name, message: Nom de lieu invalide.}
+            invalidPlaceNameEn:
+              value: {error: invalid_place_name, message: Invalid place name.}
+    MethodNotAllowed:
+      description: Only POST is accepted. The message is localized in French or English.
+      headers:
+        Allow:
+          schema:
+            type: string
+          description: Always POST.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MethodNotAllowedError'
+          examples:
+            french:
+              value: {error: method_not_allowed, message: Méthode non autorisée.}
+            english:
+              value: {error: method_not_allowed, message: Method not allowed.}
+    RequestTooLarge:
+      description: Request body exceeds the endpoint byte limit.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RequestTooLargeError'
+          examples:
+            french:
+              value: {error: request_too_large, message: La requête est trop volumineuse.}
+            english:
+              value: {error: request_too_large, message: Request body is too large.}
+    RateLimited:
+      description: Request limit exceeded. The message is localized in French or English.
+      headers:
+        Retry-After:
+          required: true
+          schema:
+            type: string
+          description: Number of seconds before a retry is allowed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RateLimitedError'
+          examples:
+            french:
+              value: {error: rate_limited, message: Trop de requêtes. Veuillez réessayer plus tard.}
+            english:
+              value: {error: rate_limited, message: Too many requests. Please try again later.}
+    InternalError:
+      description: An internal request failure. Internal details are not returned.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InternalError'
+    ServiceUnavailable:
+      description: A required service is unavailable. The message is localized.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ServiceUnavailableError'
+    RequestTimeout:
+      description: The overall request deadline was reached. The response is partial and no route is asserted complete.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RequestTimeoutError'
+          examples:
+            french:
+              value: {error: request_timeout, message: La recherche a expiré., partial: true, partialReason: deadline}
+            english:
+              value: {error: request_timeout, message: The search timed out., partial: true, partialReason: deadline}
