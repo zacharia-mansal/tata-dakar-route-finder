@@ -87,7 +87,7 @@ describe('runtime Stadia walking route wiring', () => {
       const response = await runtimeEndpoint({
         env: {
           DATABASE_URL_PUBLIC_API: 'fixture-database-connection',
-          STADIA_API_KEY: 'fixture-runtime-stadia-key',
+          STADIA_ROUTING_API_KEY: 'fixture-runtime-stadia-key',
         },
         fetchMock,
       })(request());

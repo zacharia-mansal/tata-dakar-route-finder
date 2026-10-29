@@ -63,7 +63,7 @@ export function createRuntimeResolver(
   let resolver: ReturnType<typeof createPlaceResolver> | undefined;
 
   return async (query, locale, signal) => {
-    const apiKey = env.STADIA_API_KEY;
+    const apiKey = env.STADIA_ROUTING_API_KEY;
     const connectionString = env.DATABASE_URL_PUBLIC_API;
     if (!apiKey || !connectionString) throw new Error('Place search dependencies are unavailable');
 
@@ -212,7 +212,7 @@ export function createResolvePlacesEndpoint(options: ResolvePlacesEndpointOption
 const runtimeEnv = process.env;
 const runtimeEndpoint = createResolvePlacesEndpoint({
   env: runtimeEnv,
-  stadiaApiKey: runtimeEnv.STADIA_API_KEY,
+  stadiaApiKey: runtimeEnv.STADIA_ROUTING_API_KEY,
   resolvePlaces: createRuntimeResolver(runtimeEnv),
 });
 

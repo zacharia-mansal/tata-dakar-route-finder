@@ -24,7 +24,7 @@ const network: PublishedTransitNetworkSnapshot = {
 
 const testEnvironment = {
   DATABASE_URL_PUBLIC_API: 'inert-test-value',
-  STADIA_API_KEY: 'fixture-only-key',
+  STADIA_ROUTING_API_KEY: 'fixture-only-key',
 };
 
 describe('runtime published-network cache composition', () => {

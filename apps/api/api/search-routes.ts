@@ -70,7 +70,7 @@ export function createRuntimeDependencies(
       return loadCachedSnapshot(signal);
     },
     async searchRoutes(input) {
-      const apiKey = env.STADIA_API_KEY?.trim();
+      const apiKey = env.STADIA_ROUTING_API_KEY?.trim();
       if (!apiKey) {
         return { routes: [], partial: true, partialReason: 'walking_service_error' };
       }
