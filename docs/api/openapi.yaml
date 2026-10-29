@@ -91,7 +91,9 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
         '503':
-          description: A required service or shared rate-limit store is unavailable.
+          description: >-
+            A required service or shared rate-limit store is unavailable. This
+            response does not include Retry-After.
           content:
             application/json:
               schema:
@@ -99,13 +101,25 @@ paths:
                   - $ref: '#/components/schemas/ServiceUnavailableError'
                   - $ref: '#/components/schemas/PartialSearchError'
               examples:
-                serviceUnavailableFr:
-                  summary: Service unavailable, French
+                routeUnavailableFr:
+                  summary: Route service unavailable, French
                   value:
                     error: service_unavailable
                     message: La recherche d’itinéraire est temporairement indisponible.
+                routeUnavailableEn:
+                  summary: Route service unavailable, English
+                  value:
+                    error: service_unavailable
+                    message: Route search is temporarily unavailable.
+                walkingServiceErrorFr:
+                  summary: Walking service failure with no complete journey, French
+                  value:
+                    error: service_unavailable
+                    message: La recherche de trajet est temporairement indisponible.
+                    partial: true
+                    partialReason: walking_service_error
                 walkingServiceErrorEn:
-                  summary: Walking service error, English
+                  summary: Walking service failure with no complete journey, English
                   value:
                     error: service_unavailable
                     message: Route search is temporarily unavailable.
@@ -697,10 +711,12 @@ components:
       description: Request limit exceeded. The message is localized in French or English.
       headers:
         Retry-After:
-          required: true
           schema:
             type: string
-          description: Number of seconds before a retry is allowed.
+          description: >-
+            Number of seconds before a retry is allowed. The handler includes
+            this header when the rate-limit store provides retryAfterSeconds;
+            otherwise it is omitted.
       content:
         application/json:
           schema:
@@ -717,11 +733,24 @@ components:
           schema:
             $ref: '#/components/schemas/InternalError'
     ServiceUnavailable:
-      description: A required service is unavailable. The message is localized.
+      description: >-
+        A required service is unavailable. The message is localized. The
+        current handlers do not include a Retry-After header on HTTP 503.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ServiceUnavailableError'
+          examples:
+            placeUnavailableFr:
+              summary: Place service unavailable, French
+              value:
+                error: service_unavailable
+                message: La recherche de lieux est temporairement indisponible.
+            placeUnavailableEn:
+              summary: Place service unavailable, English
+              value:
+                error: service_unavailable
+                message: Place search is temporarily unavailable.
     RequestTimeout:
       description: The overall request deadline was reached. The response is partial and no route is asserted complete.
       content:
