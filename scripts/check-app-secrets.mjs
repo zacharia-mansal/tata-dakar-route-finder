@@ -2,15 +2,11 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ALLOWED_EXPO_PUBLIC_VARIABLES = new Set([
-  'EXPO_PUBLIC_API_URL',
-  'EXPO_PUBLIC_STADIA_API_KEY',
-]);
-
 const TEXT_EXTENSIONS = new Set([
   '.cjs',
   '.cmd',
   '.css',
+  '.dart',
   '.env',
   '.gradle',
   '.html',
@@ -53,17 +49,15 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
   'web-build',
 ]);
 
-const SECRET_EXPO_SUFFIX = /(?:^|_)(?:ACCESS_KEY|API_KEY|AUTH|BEARER|CREDENTIALS?|DATABASE|DB|ENCRYPTION|KEY|PASS|PASSWORD|PASSWD|PRIVATE|SECRET|SIGNING|TOKEN)(?:_|$)/i;
-const SENSITIVE_ENV_REFERENCE = /\b(?:DATABASE_URL(?:_PUBLIC_API)?|PGPASSWORD|DB_PASSWORD)\b/i;
-const SERVER_ONLY_ENV_REFERENCE = /\b(?:ALLOW_MEMORY_RATE_LIMIT|EXPO_PUBLIC_ALLOW_MEMORY_RATE_LIMIT|STADIA_ROUTING_API_KEY)\b/i;
+const SENSITIVE_ENV_REFERENCE = /\b(?:DATABASE_URL(?:_PUBLIC_API)?|PGPASSWORD|DB_PASSWORD|NEON_API_KEY|STADIA_ROUTING_API_KEY)\b/i;
+const SERVER_ONLY_ENV_REFERENCE = /\b(?:ALLOW_MEMORY_RATE_LIMIT|STADIA_ROUTING_API_KEY|NEON_API_KEY)\b/i;
 const PASSWORD_VARIABLE_REFERENCE = /\b(?:PASSWORD|PASSWD|PGPASSWORD|DB_PASSWORD)\b\s*(?:=|:)\s*[^;\s,]+/i;
 const POSTGRES_CONNECTION_STRING = /\bpostgres(?:ql)?:\/\//i;
 const URL_WITH_CREDENTIALS = /\b[a-z][a-z\d+.-]*:\/\/[^/?#\s"'`]+:[^@/?#\s"'`]+@/i;
-const EXPO_PUBLIC_VARIABLE = /\bEXPO_PUBLIC_[A-Z0-9_]+\b/gi;
 
 const RULE_MESSAGES = Object.freeze({
   'database-url': 'Database credential variables must remain server-side.',
-  'expo-public-secret': 'Sensitive Expo public variables are not allowed unless explicitly approved.',
+  'server-secret': 'Server credentials must remain outside the app bundle.',
   'postgres-url': 'PostgreSQL connection strings must remain server-side.',
   'public-url-query': 'Public API endpoints must not contain query parameters or fragments.',
   'secret-reference': 'Password values and references must remain server-side.',
@@ -98,17 +92,7 @@ export function findClientSecretLeaks(source, filename) {
     rules.add('url-credentials');
   }
 
-  for (const match of source.matchAll(EXPO_PUBLIC_VARIABLE)) {
-    const variableName = match[0].toUpperCase();
-    if (ALLOWED_EXPO_PUBLIC_VARIABLES.has(variableName)) {
-      continue;
-    }
-
-    const suffix = variableName.slice('EXPO_PUBLIC_'.length);
-    if (SECRET_EXPO_SUFFIX.test(suffix)) {
-      rules.add('expo-public-secret');
-    }
-  }
+  if (/\b(?:DATABASE_URL(?:_PUBLIC_API)?|STADIA_ROUTING_API_KEY|NEON_API_KEY)\b/i.test(source)) rules.add('server-secret');
 
   return [...rules].map((rule) => ({
     file: filename,
@@ -118,38 +102,15 @@ export function findClientSecretLeaks(source, filename) {
 }
 
 /**
- * Check only Expo-public assignments in environment files. Server-side variables
- * such as DATABASE_URL are deliberately ignored here, while their values are
- * never returned in findings.
+ * Check build-time and source references for server credentials.
  *
  * @param {string} source
  * @param {string} filename
  * @returns {{ file: string, rule: string, message: string }[]}
  */
-export function findExpoPublicEnvLeaks(source, filename) {
+export function findAppSecretLeaks(source, filename) {
   const rules = new Set();
-  const assignment = /^\s*(?:export\s+)?(EXPO_PUBLIC_[A-Z0-9_]+)\s*=\s*(.*?)\s*$/i;
-
-  for (const line of source.split(/\r?\n/)) {
-    const match = line.match(assignment);
-    if (!match) {
-      continue;
-    }
-
-    const [, variableName, rawValue] = match;
-    const value = rawValue.replace(/^(["'])(.*)\1$/, '$2').trim();
-
-    for (const { rule } of findClientSecretLeaks(`${variableName}=${value}`, filename)) {
-      rules.add(rule);
-    }
-
-    if (
-      variableName.toUpperCase() === 'EXPO_PUBLIC_API_URL' &&
-      /[?#]/.test(value)
-    ) {
-      rules.add('public-url-query');
-    }
-  }
+  for (const { rule } of findClientSecretLeaks(source, filename)) rules.add(rule);
 
   return [...rules].map((rule) => ({
     file: filename,
@@ -167,7 +128,7 @@ function isTextRuntimeOrConfigFile(filename) {
   );
 }
 
-async function collectClientFiles(directory, appRoot, files = []) {
+async function collectAppFiles(directory, files = []) {
   const entries = await readdir(directory, { withFileTypes: true });
 
   for (const entry of entries) {
@@ -176,7 +137,7 @@ async function collectClientFiles(directory, appRoot, files = []) {
       if (EXCLUDED_DIRECTORY_NAMES.has(entry.name.toLowerCase())) {
         continue;
       }
-      await collectClientFiles(absolutePath, appRoot, files);
+      await collectAppFiles(absolutePath, files);
       continue;
     }
 
@@ -188,37 +149,32 @@ async function collectClientFiles(directory, appRoot, files = []) {
   return files;
 }
 
-async function collectRootEnvFiles(projectRoot) {
-  const entries = await readdir(projectRoot, { withFileTypes: true });
-
-  return entries
-    .filter((entry) => entry.isFile() && /^\.env(?:\..+)?$/.test(entry.name))
-    .map((entry) => path.join(projectRoot, entry.name));
-}
-
 async function runCli() {
   const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
   const projectRoot = path.resolve(scriptDirectory, '..');
-  const appRoot = path.join(projectRoot, 'apps', 'client');
+  const appRoot = path.join(projectRoot, 'apps', 'app');
 
-  let clientFiles;
-  let rootEnvFiles;
+  let appFiles;
   try {
-    clientFiles = await collectClientFiles(appRoot, appRoot);
-    rootEnvFiles = await collectRootEnvFiles(projectRoot);
+    try {
+      appFiles = await collectAppFiles(appRoot);
+    } catch (error) {
+      if (error?.code === 'ENOENT') appFiles = [];
+      else throw error;
+    }
   } catch {
-    process.stderr.write('Client secret scan failed: apps/client could not be scanned.\n');
+    process.stderr.write('App secret scan failed: apps/app could not be scanned.\n');
     process.exitCode = 2;
     return;
   }
 
   const findings = [];
-  for (const absolutePath of clientFiles) {
+  for (const absolutePath of appFiles) {
     let source;
     try {
       source = await readFile(absolutePath, 'utf8');
     } catch {
-      process.stderr.write('Client secret scan failed: a client file could not be read.\n');
+      process.stderr.write('App secret scan failed: an app file could not be read.\n');
       process.exitCode = 2;
       return;
     }
@@ -227,31 +183,17 @@ async function runCli() {
     findings.push(...findClientSecretLeaks(source, relativePath));
   }
 
-  for (const absolutePath of rootEnvFiles) {
-    let source;
-    try {
-      source = await readFile(absolutePath, 'utf8');
-    } catch {
-      process.stderr.write('Client secret scan failed: a root environment file could not be read.\n');
-      process.exitCode = 2;
-      return;
-    }
-
-    const relativePath = path.relative(projectRoot, absolutePath).split(path.sep).join('/');
-    findings.push(...findExpoPublicEnvLeaks(source, relativePath));
-  }
-
   if (findings.length > 0) {
     for (const finding of findings) {
       process.stdout.write(`${finding.file}: ${finding.rule} — ${finding.message}\n`);
     }
-    process.stderr.write(`Client secret scan failed with ${findings.length} finding(s).\n`);
+    process.stderr.write(`App secret scan failed with ${findings.length} finding(s).\n`);
     process.exitCode = 1;
     return;
   }
 
   process.stdout.write(
-    `Client secret scan passed (${clientFiles.length} client file(s), ${rootEnvFiles.length} root environment file(s)).\n`,
+    `App secret scan passed (${appFiles.length} app file(s)).\n`,
   );
 }
 

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { load } from 'js-yaml';
 
@@ -14,6 +14,7 @@ const postgresConnection = readFileSync(new URL('./postgres-connection.mjs', imp
 const envExample = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 const firstRunChecklist = readFileSync(new URL('../docs/ci-first-run-checklist.md', import.meta.url), 'utf8');
 const projectRoot = new URL('..', import.meta.url);
+const workspaceManifest = load(readFileSync(new URL('../pnpm-workspace.yaml', import.meta.url), 'utf8'));
 
 describe('Neon workflow security and reliability', () => {
   it('parses valid YAML and keeps status functions and step references in valid contexts', () => {
@@ -83,8 +84,19 @@ describe('Neon workflow security and reliability', () => {
       'pnpm -r typecheck',
       'pnpm typecheck',
       'pnpm exec vitest run',
-      'pnpm check:client-secrets',
+      'pnpm check:app-secrets',
     ]);
+  });
+
+  it('does not run commands for the removed Expo client in CI', () => {
+    const commands = Object.values(workflow.jobs)
+      .flatMap((job) => job.steps ?? [])
+      .map((step) => step.run ?? '')
+      .join('\n');
+
+    expect(commands).not.toMatch(/pnpm\s+--filter\s+client\b/i);
+    expect(commands).not.toMatch(/pnpm\s+check:client-secrets\b/i);
+    expect(commands).not.toMatch(/apps\/client/i);
   });
 
   it('pins each remaining external action to a 40-character commit SHA', () => {
@@ -240,9 +252,17 @@ describe('repository hygiene and lockfile consistency', () => {
     const yaml = load(readFileSync(new URL('../pnpm-lock.yaml', import.meta.url), 'utf8'));
     const workspaces = [
       ['.', '../package.json'],
-      ['apps/client', '../apps/client/package.json'],
+      ['apps/api', '../apps/api/package.json'],
       ['packages/domain', '../packages/domain/package.json'],
     ];
+
+    expect(workspaceManifest.packages).toContain('apps/*');
+    expect(yaml.importers['apps/api']).toBeTruthy();
+    expect(yaml.importers['apps/client']).toBeUndefined();
+    expect(existsSync(new URL('../apps/client', import.meta.url))).toBe(false);
+
+    const apiManifest = JSON.parse(readFileSync(new URL('../apps/api/package.json', import.meta.url), 'utf8'));
+    expect(JSON.stringify(apiManifest)).not.toMatch(/apps\/client|workspace:[^"\s]*client/i);
 
     for (const [importerName, manifestUrl] of workspaces) {
       const manifest = JSON.parse(readFileSync(new URL(manifestUrl, import.meta.url), 'utf8'));

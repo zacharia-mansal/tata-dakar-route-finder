@@ -6,7 +6,7 @@
 
 Dakar Tata Route Finder vise à aider une personne à trouver un itinéraire en bus Tata entre deux lieux de Dakar, même si elle ne connaît ni les arrêts ni les noms affichés sur les bus. La V1 commence dans le secteur Sicap autour de Castor et Liberté ; l’extension de la couverture dépendra de la qualité des données et des retours terrain.
 
-Le dépôt contient le socle Expo, le modèle métier de transport, le schéma Neon/PostGIS et une API TypeScript de recherche et de résolution de lieux testée. **Ce n’est pas encore une application de trajet utilisable de bout en bout** : le catalogue réel est vide, l’écran de recherche n’est pas relié à l’API, l’interface cartographique n’est pas construite et les services ne sont pas déployés.
+Le dépôt contient le modèle métier de transport, le schéma Neon/PostGIS et une API TypeScript de recherche et de résolution de lieux testée. Le client Expo a été retiré; le client Flutter sera créé dans une PR distincte. **Ce n’est pas encore une application de trajet utilisable de bout en bout** : le catalogue réel est vide, l’écran de recherche n’est pas relié à l’API, l’interface cartographique n’est pas construite et les services ne sont pas déployés.
 
 État global : **développement local, branche Task 3, pas prêt pour la production**. Le code de la Task 2 est présent dans l’historique et son commit de schéma fait partie de la branche courante. Le product owner a indiqué que la PR #1 et la Task 2 étaient closes ; la réussite d’une validation Neon complète doit toutefois être confirmée dans GitHub Actions avant de la présenter comme vérifiée.
 
@@ -37,7 +37,7 @@ Le français est la langue principale ; l’anglais est une option dans les para
 ### Décisions structurantes prises au fil du projet
 
 - La première conception envisageait Supabase. Le choix a ensuite été remplacé par **Neon PostgreSQL + PostGIS**, en conservant les migrations SQL, dbmate et pgTAP, mais sans dépendance à Supabase CLI.
-- La base n’est jamais interrogée directement depuis Expo : l’API Vercel lit uniquement la vue publiée avec un rôle lecture dédié.
+- La base n’est jamais interrogée directement depuis un client mobile : l’API Vercel lit uniquement la vue publiée avec un rôle lecture dédié.
 - Le spike Neon Auth a montré une méthode Web côté serveur pour l’administration (`auth.getSession()` puis allowlist serveur par ID utilisateur Neon). L’obtention d’un jeton client Expo n’a pas été démontrée, Android n’a pas été testé et Neon Auth n’est donc pas retenu pour l’authentification des contributeurs.
 - La validation de base prévue en CI utilise une branche Neon temporaire. Les PR de forks ne reçoivent aucun secret et doivent indiquer que la validation Neon est non exécutée. La validation complète distante reste à constater réellement.
 - Les plans détaillés doivent être déplacés/versionnés sous `docs/plans/` après la Task 3 ; ce document est la passation de l’état courant, pas le remplacement de ces plans.
@@ -46,15 +46,15 @@ Le français est la langue principale ; l’anglais est une option dans les para
 
 | Partie | Choix | État constaté |
 |---|---|---|
-| Client mobile/web | Expo SDK 58, React Native 0.88, React 19, TypeScript, Expo Router ; Android, iPhone et web visés | Squelette, accueil, paramètres et langues présents. Le formulaire de recherche n’est pas encore fonctionnel. |
+| Client | Application mobile uniquement, pas de version web ; Android premier client, iPhone à décider | Flutter est la cible. Expo est retiré; le projet Flutter n’est pas créé et sera livré séparément. |
 | Cartographie | MapLibre | Dépendances et plugin présents ; pas encore d’écran de carte ni de parcours complet. Fournisseur et clé publique à revoir dans la PR Cartes. |
 | Domaine partagé | TypeScript dans `packages/domain` | Modèles de lieux, arrêts, directions, trajets et recherche d’itinéraires avec tests. |
 | API | Fonctions TypeScript destinées à Vercel, dans `apps/api/api/` | Handlers `/api/resolve-places` et `/api/search-routes` et logique serveur présents. Déploiement Vercel non vérifié. |
 | Base | Neon PostgreSQL + PostGIS ; dbmate dans `db/migrations/` | Deux migrations, seed vide et tests pgTAP présents. dbmate doit utiliser une connexion directe ; les lectures API passent par Neon HTTP et la variable serveur `DATABASE_URL_PUBLIC_API`, prévue pour l’accès de lecture poolé. |
 | Rôles SQL | `tata_catalog_reader` pour la vue publiée ; connexion serveur dédiée `tata_public_api` | Le rôle de connexion doit être créé manuellement au déploiement, membre de `tata_catalog_reader`. Aucune migration ne crée de rôle de connexion ni de secret. |
-| Dépendances/tests | pnpm workspace, TypeScript, Vitest | Configurations de typecheck présentes pour racine, client, domaine et API. |
+| Dépendances/tests | pnpm workspace, TypeScript, Vitest | Configurations de typecheck présentes pour racine, domaine et API. |
 
-Expo ne reçoit jamais `DATABASE_URL`, une chaîne PostgreSQL ou un secret d’administration. Le client appelle l’API HTTPS ; les secrets restent côté serveur.
+Le client mobile ne reçoit jamais `DATABASE_URL`, une chaîne PostgreSQL ou un secret d’administration. Flutter sera configuré avec `--dart-define` uniquement pour des paramètres publics; aucun secret ne doit y être injecté. Le client appelle l’API HTTPS ; les secrets restent côté serveur.
 
 ### Rôles et connexions de base
 
@@ -67,12 +67,11 @@ Le README documente maintenant la création manuelle de `tata_public_api`, les d
 
 ## 5. Ce qui a été construit
 
-### Task 1 — socle client
+### Task 1 — ancien socle Expo (retiré)
 
-- Workspace pnpm et application Expo universelle configurés.
-- Français et anglais disponibles dans les ressources du client.
-- Validation des variables publiques et scan empêchant l’exposition de secrets serveur côté client.
-- Accueil et écran de paramètres de langue présents.
+- L’ancien squelette Expo a été supprimé de `apps/client` et ses dépendances retirées du manifeste racine.
+- Aucun client Flutter n’est inclus dans cette tâche.
+- Le scan `check:app-secrets` cible le futur dossier `apps/app` et refuse les secrets serveur.
 
 ### Task 2 — catalogue Tata vérifié
 
@@ -113,14 +112,14 @@ Le job est présent dans la branche locale. Le commit `1fbe022` ajoute aussi l�
 |---|---|
 | Modèle métier de recherche | Implémenté et testé dans le domaine et l’API. |
 | Catalogue réel Sicap/Castor/Liberté | **Absent** ; le seed est vide. Relevé et validation terrain nécessaires. |
-| Écran de recherche utilisable | **Absent** ; l’accueil est encore un squelette et n’appelle pas l’API. |
+| Client Flutter / écran de recherche | **Absent** ; à créer dans une PR distincte. |
 | Résultats et instructions de trajet dans le client | **Absents**. |
 | Carte, géolocalisation et guidage visuel | **Absents** dans l’app ; dépendances de carte seulement. |
 | Recherche hors ligne | **Non implémentée** ; chaque nouvelle recherche nécessite Internet. |
 | API déployée sur Vercel | **Non vérifiée / non déployée**. |
 | Builds Android/iPhone | **Non vérifiés dans cet audit**. |
 | Administration Next.js | **Non présente** dans ce dépôt. Le spike Neon Auth a validé un parcours Web côté serveur avec `auth.getSession()` et une allowlist par ID utilisateur Neon. |
-| Authentification contributeurs | **À décider** parmi Clerk, Auth0 et Firebase ; Neon Auth n’est pas retenu pour Expo. |
+| Authentification contributeurs | **À décider** parmi Clerk, Auth0 et Firebase ; Neon Auth n’est pas retenu pour le client mobile. |
 | Contributions, points et photos privées | **Non implémentés**. |
 | Itinéraires terrain publiés | **Aucun** dans les seeds. |
 
@@ -142,10 +141,10 @@ Voir [docs/neon-auth-spike.md](neon-auth-spike.md) pour les résultats et limite
 |---|---|
 | Vitest complet avec `node node_modules/vitest/vitest.mjs run` | **PASS** — 41 fichiers, 272 tests, après le correctif d’identité rate limit. |
 | TypeScript racine, `tsconfig.json` | **PASS** — `tsc --noEmit`. |
-| TypeScript client, `apps/client/tsconfig.json` | **PASS** — `tsc --noEmit`. |
+| TypeScript client Expo, `apps/client/tsconfig.json` | **PASS historique avant retrait d’Expo** — ce projet/configuration n’existe plus dans la branche courante. |
 | TypeScript domaine, `packages/domain/tsconfig.json` | **PASS** — `tsc --noEmit`. |
 | TypeScript API, `apps/api/tsconfig.json` | **PASS** — `tsc --noEmit`. |
-| Scan avec `node scripts/check-client-secrets.mjs` | **PASS** — 13 fichiers client et 1 fichier d’environnement racine scannés. |
+| Scan avec `node scripts/check-app-secrets.mjs` | Résultat historique avant retrait Expo; à relancer après validation du lockfile. |
 | Commandes pnpm récursives / `pnpm typecheck` | **NON TERMINÉES** — les commandes lancées en parallèle sont restées silencieuses et ont été interrompues. Les quatre configurations ont été vérifiées directement avec le TypeScript local. |
 | Validation Neon réelle : migrations, seed, pgTAP, rollback, réapplication | **NON EXÉCUTÉE pendant cet audit** — aucun accès à Neon. |
 | Job `workspace-validation` sur GitHub Actions | **NON EXÉCUTÉ** — le push a échoué et aucune PR n’a été créée. |
@@ -162,7 +161,7 @@ Les tests avec fixtures ne démontrent pas la justesse des vrais itinéraires, n
 1. **Données :** sans itinéraires vérifiés, l’app ne peut pas rendre de résultat fiable. La collecte Sicap et la validation terrain sont prioritaires.
 2. **Rate limit :** aucun magasin partagé de production n’est choisi ou configuré. L’API renvoie volontairement 503 en preview/production sans magasin. Le plafond global des appels payants reste à définir.
 3. **Identité client de rate limit :** le code utilise `x-vercel-forwarded-for` et ignore les valeurs client `x-forwarded-for` / `x-real-ip`. Le test local couvre un XFF falsifié ; l’entrée Vercel réelle, et tout proxy placé devant Vercel, restent à confirmer sur le déploiement.
-4. **Clé publique de carte :** `apps/client/src/config/env.ts` exige actuellement `EXPO_PUBLIC_STADIA_API_KEY` et ce nom figure dans `.env.example`. Le product owner avait reporté le choix du fournisseur/nom à la PR Cartes ; revoir ce décalage dans cette PR. La clé serveur `STADIA_ROUTING_API_KEY` doit rester privée.
+4. **Clé publique de carte :** le client Flutter n’existe pas encore et aucun nom de variable publique de carte n’est décidé. La configuration future via `--dart-define` ne doit contenir aucun secret. La clé serveur `STADIA_ROUTING_API_KEY` doit rester privée.
 5. **Neon production :** créer manuellement `tata_public_api`, limiter les connexions, configurer `statement_timeout` et `lock_timeout`, puis contrôler les valeurs effectives avec la connexion poolée retenue.
 6. **Admin :** activer la vérification de l’e-mail et désactiver Allow Localhost en production. La liste d’administrateurs est côté serveur par ID Neon, jamais par e-mail. Les cookies entre domaines distincts ne sont pas testés.
 7. **Contributions :** choisir l’auth mobile, le stockage privé, le quota journalier et la conservation des photos/propositions avant l’implémentation.

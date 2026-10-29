@@ -1,13 +1,13 @@
 # Première validation de la CI Neon — Task 2
 
-Cette checklist prépare la première exécution du workflow `neon-db.yml`. Ne mettez jamais une clé ou une URL de connexion dans un fichier du dépôt, dans Expo ou dans un message de log.
+Cette checklist prépare la première exécution du workflow `neon-db.yml`. Ne mettez jamais une clé ou une URL de connexion dans un fichier du dépôt, dans l’application mobile ou dans un message de log.
 
 ## A. Créer le projet Neon Tata
 
 - Créer un projet Neon dédié à Tata dans la région choisie pour le service.
 - Récupérer l’identifiant du projet depuis la console Neon.
 - Créer une clé API limitée à ce projet et aux opérations nécessaires à la création et à la suppression des branches temporaires de validation, si Neon permet de limiter ainsi la portée.
-- Garder ces deux valeurs dans le gestionnaire de secrets GitHub seulement. Ne pas les coller dans le dépôt ni dans Expo.
+- Garder ces deux valeurs dans le gestionnaire de secrets GitHub seulement. Ne pas les coller dans le dépôt ni dans l’application mobile.
 
 ## B. Créer le dépôt GitHub privé et préparer la branche
 
