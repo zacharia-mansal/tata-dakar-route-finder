@@ -46,7 +46,7 @@ Le français est la langue principale ; l’anglais est une option dans les para
 
 | Partie | Choix | État constaté |
 |---|---|---|
-| Client mobile/web | Flutter (Android, iPhone et web visés) | Décision prise. Expo retiré dans cette branche; le projet Flutter n’est pas créé et sera livré séparément. |
+| Client | Application mobile uniquement, pas de version web ; Android premier client, iPhone à décider | Flutter est la cible. Expo est retiré; le projet Flutter n’est pas créé et sera livré séparément. |
 | Cartographie | MapLibre | Dépendances et plugin présents ; pas encore d’écran de carte ni de parcours complet. Fournisseur et clé publique à revoir dans la PR Cartes. |
 | Domaine partagé | TypeScript dans `packages/domain` | Modèles de lieux, arrêts, directions, trajets et recherche d’itinéraires avec tests. |
 | API | Fonctions TypeScript destinées à Vercel, dans `apps/api/api/` | Handlers `/api/resolve-places` et `/api/search-routes` et logique serveur présents. Déploiement Vercel non vérifié. |
@@ -119,7 +119,7 @@ Le job est présent dans la branche locale. Le commit `1fbe022` ajoute aussi l�
 | API déployée sur Vercel | **Non vérifiée / non déployée**. |
 | Builds Android/iPhone | **Non vérifiés dans cet audit**. |
 | Administration Next.js | **Non présente** dans ce dépôt. Le spike Neon Auth a validé un parcours Web côté serveur avec `auth.getSession()` et une allowlist par ID utilisateur Neon. |
-| Authentification contributeurs | **À décider** parmi Clerk, Auth0 et Firebase ; Neon Auth n’est pas retenu pour Expo. |
+| Authentification contributeurs | **À décider** parmi Clerk, Auth0 et Firebase ; Neon Auth n’est pas retenu pour le client mobile. |
 | Contributions, points et photos privées | **Non implémentés**. |
 | Itinéraires terrain publiés | **Aucun** dans les seeds. |
 

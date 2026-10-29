@@ -112,7 +112,7 @@ ALTER ROLE tata_public_api SET statement_timeout = '4s';
 ALTER ROLE tata_public_api SET lock_timeout = '1s';
 ```
 
-Définissez le mot de passe séparément au moyen d’un parcours sécurisé, par exemple avec la commande interactive `\password tata_public_api` dans `psql`. N’écrivez jamais le mot de passe dans le dépôt, une migration, une commande journalisée ou un message. La connexion poolée de ce rôle est stockée uniquement dans la variable serveur Vercel `DATABASE_URL_PUBLIC_API`, jamais dans Expo.
+Définissez le mot de passe séparément au moyen d’un parcours sécurisé, par exemple avec la commande interactive `\password tata_public_api` dans `psql`. N’écrivez jamais le mot de passe dans le dépôt, une migration, une commande journalisée ou un message. La connexion poolée de ce rôle est stockée uniquement dans la variable serveur Vercel `DATABASE_URL_PUBLIC_API`, jamais dans l’application mobile.
 
 `statement_timeout` arrête une instruction SQL qui dépasse quatre secondes ; `lock_timeout` limite à une seconde chaque attente de verrou. Ces délais complètent l’échéance applicative de dix secondes. Les valeurs configurées par `ALTER ROLE ... SET` s’appliquent lors de l’ouverture d’une nouvelle session : après une modification, ouvrez une nouvelle connexion. Neon utilise PgBouncer en mode transaction pour les connexions poolées ; ne comptez pas sur un `SET` de session envoyé dans une requête pour survivre à la transaction suivante. Contrôlez les valeurs effectives en vous connectant avec `tata_public_api` via la connexion poolée utilisée par l’API :
 
