@@ -6,6 +6,7 @@ import type { PlaceCandidate } from '../../../packages/domain/src/place';
 import type { RoutingSearchResult } from './routing';
 import { jsonResponse, localeFromAcceptLanguage, readBoundedRequestBody } from './httpRequest';
 import type { PublishedServedPlace, PublishedTransitNetworkSnapshot } from './neon';
+import type { NetworkId } from '../../../packages/domain/src/transit';
 
 interface RateLimitResult {
   allowed: boolean;
@@ -31,6 +32,7 @@ interface SearchRouteHandlerDependencies {
   loadPublishedSnapshot(signal?: AbortSignal): Promise<PublishedTransitNetworkSnapshot>;
   searchRoutes(input: {
     network: PublishedTransitNetworkSnapshot;
+    networkId: NetworkId;
     origin: RouteSearchInput['origin'];
     destination: PlaceCandidate;
     locale: 'fr' | 'en';
@@ -42,6 +44,7 @@ interface SearchRouteHandlerDependencies {
 }
 
 interface ValidRequestBody {
+  network: NetworkId;
   origin: SelectedOrigin;
   destination: PlaceSelection;
   locale: 'fr' | 'en';
@@ -107,7 +110,7 @@ function normalizeGeocoderLabel(value: unknown): string | undefined {
   return trimmed;
 }
 
-function parsePlaceSelection(value: unknown): PlaceSelectionResult {
+function parsePlaceSelection(value: unknown, network: NetworkId): PlaceSelectionResult {
   if (!isRecord(value)) return { kind: 'invalid' };
 
   if (value.source === 'catalogue') {
@@ -119,7 +122,11 @@ function parsePlaceSelection(value: unknown): PlaceSelectionResult {
   if (value.source !== 'geocoder' || !validCoordinates(value.coordinates)) return { kind: 'invalid' };
   const displayName = normalizeGeocoderLabel(value.displayName);
   if (!displayName) return { kind: 'invalid_place_name' };
-  if (!isInsideDakarMetropolitanGuard(value.coordinates)) return { kind: 'invalid' };
+  // The Dakar-only coarse geocoder guard must not reject another selected network.
+  // Actual matching remains scoped to the network's published served places below.
+  if (network === 'aftu_dakar' && !isInsideDakarMetropolitanGuard(value.coordinates)) {
+    return { kind: 'invalid' };
+  }
   return {
     kind: 'valid',
     selection: { source: 'geocoder', coordinates: value.coordinates, displayName },
@@ -130,13 +137,17 @@ function validateBody(value: unknown): RequestValidation {
   if (!isRecord(value) || !isRecord(value.origin)) return { kind: 'invalid', reason: 'request' };
   const locale = value.locale;
   if (locale !== 'fr' && locale !== 'en') return { kind: 'invalid', reason: 'request' };
+  const network = value.network === undefined ? 'aftu_dakar' : value.network;
+  if (typeof network !== 'string' || !/^[a-z0-9_]{1,80}$/.test(network)) {
+    return { kind: 'invalid', reason: 'request' };
+  }
 
   let origin: SelectedOrigin;
   if (value.origin.kind === 'coordinates') {
     if (!validCoordinates(value.origin.coordinates)) return { kind: 'invalid', reason: 'request' };
     origin = { kind: 'coordinates', coordinates: value.origin.coordinates };
   } else {
-    const selectedOrigin = parsePlaceSelection(value.origin);
+    const selectedOrigin = parsePlaceSelection(value.origin, network as NetworkId);
     if (selectedOrigin.kind === 'invalid_place_name') {
       return { kind: 'invalid', reason: 'place_name', locale };
     }
@@ -150,7 +161,7 @@ function validateBody(value: unknown): RequestValidation {
         };
   }
 
-  const selectedDestination = parsePlaceSelection(value.destination);
+  const selectedDestination = parsePlaceSelection(value.destination, network as NetworkId);
   if (selectedDestination.kind === 'invalid_place_name') {
     return { kind: 'invalid', reason: 'place_name', locale };
   }
@@ -158,7 +169,20 @@ function validateBody(value: unknown): RequestValidation {
 
   return {
     kind: 'valid',
-    body: { origin, destination: selectedDestination.selection, locale },
+    body: { network: network as NetworkId, origin, destination: selectedDestination.selection, locale },
+  };
+}
+
+function snapshotForNetwork(
+  snapshot: PublishedTransitNetworkSnapshot,
+  network: NetworkId,
+): PublishedTransitNetworkSnapshot {
+  const directions = snapshot.directions.filter((direction) => direction.network === network);
+  const directionIds = new Set(directions.map((direction) => direction.id));
+  return {
+    directions,
+    stops: snapshot.stops.filter((stop) => stop.network === network),
+    servedPlaces: snapshot.servedPlaces.filter((place) => directionIds.has(place.directionId)),
   };
 }
 
@@ -305,7 +329,7 @@ async function handleRequest(
     );
   }
 
-  const snapshot = await dependencies.loadPublishedSnapshot(signal);
+  const snapshot = snapshotForNetwork(await dependencies.loadPublishedSnapshot(signal), body.network);
 
   let origin: RouteSearchInput['origin'];
   if (body.origin.kind === 'coordinates') {
@@ -329,6 +353,7 @@ async function handleRequest(
 
   const searchResult = await dependencies.searchRoutes({
     network: snapshot,
+    networkId: body.network,
     origin,
     destination,
     locale: body.locale,

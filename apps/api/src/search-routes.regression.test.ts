@@ -28,8 +28,18 @@ const publishedDestination = {
   verifiedAt: '2026-10-22T12:00:00.000Z',
 };
 const publishedSnapshot = {
-  directions: [],
-  stops: [],
+  directions: [{
+    id: 'direction-24-out', network: 'aftu_dakar', networkName: 'AFTU Dakar', qualityStatus: 'confirmed', source: 'test_fixture',
+    lineNumber: '24', directionName: 'Fixture direction', displayedDestinationLabel: 'Université', receiverQuestion: 'Fixture wording',
+    stops: [
+      { id: 'castor-stop', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: originPlace.coordinates, aliases: [] },
+      { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: destination.coordinates, aliases: [] },
+    ],
+  }],
+  stops: [
+    { id: 'castor-stop', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: originPlace.coordinates, aliases: [] },
+    { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: destination.coordinates, aliases: [] },
+  ],
   servedPlaces: [publishedOrigin, publishedDestination],
 };
 

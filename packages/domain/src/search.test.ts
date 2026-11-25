@@ -6,6 +6,10 @@ import type { TransitDirection, TransitStop } from './transit';
 
 const stop = (id: string, name: string, lat: number, lon: number): TransitStop => ({
   id,
+  network: 'aftu_dakar',
+  qualityStatus: 'confirmed',
+  source: 'test_fixture',
+  sourceReference: 'fixture-only',
   name,
   coordinates: { lat, lon },
   aliases: [],
@@ -25,6 +29,10 @@ const ism: PlaceCandidate = {
 
 const direction = (id: string, lineNumber: string, directionName: string, label: string, question: string, stops: TransitStop[]): TransitDirection => ({
   id,
+  network: 'aftu_dakar',
+  networkName: 'AFTU Dakar',
+  qualityStatus: 'confirmed',
+  source: 'test_fixture',
   lineNumber,
   directionName,
   displayedDestinationLabel: label,
@@ -40,6 +48,7 @@ const limits: SearchLimits = {
 };
 
 const input: RouteSearchInput = {
+  network: 'aftu_dakar',
   origin: { kind: 'coordinates', coordinates: castor.coordinates },
   destination: ism,
   locale: 'fr',
@@ -83,6 +92,59 @@ describe('findJourneys', () => {
     expect(journey.searchedDestination.displayName).toBe('Institut Supérieur de Management');
     expect(journey.servedAreaName).toBe('Université');
     expect(journey.verifiedAt).toBe('2026-10-22T12:00:00.000Z');
+  });
+
+  it('keeps identical line numbers isolated to the selected network', () => {
+    const aftu = {
+      ...direction('aftu-24', '24', 'AFTU vers Centre', 'Centre', 'Question Centre', [castor, universite]),
+      network: 'aftu_dakar',
+    };
+    const tataStops = [castor, universite].map((stop) => ({ ...stop, network: 'tata_thies' as const }));
+    const tataThies = {
+      ...direction('tata-24', '24', 'TATA vers Centre', 'Centre', 'Question Centre', tataStops),
+      network: 'tata_thies',
+    };
+    const multiNetwork: TransitNetwork = {
+      directions: [aftu, tataThies],
+      stops: [castor, universite],
+      servedPlaces: [aftu, tataThies].map((route) => ({
+        placeId: 'ism',
+        areaName: 'Centre',
+        directionId: route.id,
+        alightingStopId: universite.id,
+        verifiedAt: '2026-10-22T12:00:00.000Z',
+      })),
+    };
+
+    const results = findJourneys(multiNetwork, { ...input, network: 'aftu_dakar' }, limits);
+
+    expect(results.map((journey) => journey.legs[0].directionId)).toEqual(['aftu-24']);
+  });
+
+  it('never returns a direction whose quality status is not confirmed', () => {
+    const unverified = {
+      ...direction('candidate-route', '24', 'Candidate route', 'Université', 'Fixture wording', [castor, universite]),
+      qualityStatus: 'incomplete',
+    } as unknown as TransitDirection;
+    const network: TransitNetwork = {
+      directions: [unverified],
+      stops: [castor, universite],
+      servedPlaces: [{ placeId: 'ism', areaName: 'Université', directionId: unverified.id, alightingStopId: universite.id, verifiedAt: '2026-10-22T12:00:00.000Z' }],
+    };
+
+    expect(findJourneys(network, input, limits)).toEqual([]);
+  });
+
+  it('never returns a direction containing an unconfirmed stop', () => {
+    const incompleteStop = { ...castor, qualityStatus: 'incomplete' } as unknown as TransitStop;
+    const unverifiedDirection = direction('route-with-incomplete-stop', '24', 'Route with candidate stop', 'Université', 'Fixture wording', [incompleteStop, universite]);
+    const network: TransitNetwork = {
+      directions: [unverifiedDirection],
+      stops: [incompleteStop, universite],
+      servedPlaces: [{ placeId: 'ism', areaName: 'Université', directionId: unverifiedDirection.id, alightingStopId: universite.id, verifiedAt: '2026-10-22T12:00:00.000Z' }],
+    };
+
+    expect(findJourneys(network, input, limits)).toEqual([]);
   });
 
   it('keeps the two directions of a line distinct and never reverses their stop order', () => {

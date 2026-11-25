@@ -8,6 +8,7 @@ import type { SharedRateLimitStore } from './rateLimit';
 import { createResolvePlacesEndpoint } from '../api/resolve-places';
 import { createSearchRoutesEndpoint } from '../api/search-routes';
 import { createSearchRoutesHandler } from './search-routes';
+import { createContributionStopsHandler } from './contribution-stops';
 
 type SearchDependencies = Omit<Parameters<typeof createSearchRoutesHandler>[0], 'rateLimit'>;
 type JsonRecord = Record<string, unknown>;
@@ -35,8 +36,14 @@ const cataloguePlace: PlaceCandidate = {
 const originCoordinates = { lat: 14.707, lon: -17.451 };
 
 const snapshot: PublishedTransitNetworkSnapshot = {
-  directions: [],
-  stops: [],
+  directions: [{ id: 'direction-24-out', network: 'aftu_dakar', networkName: 'AFTU Dakar', qualityStatus: 'confirmed', source: 'test_fixture', lineNumber: '24', directionName: 'Fixture direction', displayedDestinationLabel: 'Université', receiverQuestion: 'Fixture wording', stops: [
+    { id: 'castor', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: originCoordinates, aliases: [] },
+    { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: cataloguePlace.coordinates, aliases: [] },
+  ] }],
+  stops: [
+    { id: 'castor', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: originCoordinates, aliases: [] },
+    { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: cataloguePlace.coordinates, aliases: [] },
+  ],
   servedPlaces: [{
     ...cataloguePlace,
     id: cataloguePlace.id,
@@ -55,16 +62,26 @@ const route: JourneyOption = {
   servedAreaName: 'Université',
   legs: [{
     directionId: 'direction-24-out',
+    network: 'aftu_dakar',
+    networkName: 'AFTU Dakar',
     lineNumber: '24',
     directionName: 'Castor vers Université',
     boardingStop: {
       id: 'castor',
+      network: 'aftu_dakar',
+      qualityStatus: 'confirmed',
+      source: 'test_fixture',
+      sourceReference: 'fixture-only',
       name: 'Castor',
       coordinates: originCoordinates,
       aliases: [],
     },
     alightingStop: {
       id: 'university',
+      network: 'aftu_dakar',
+      qualityStatus: 'confirmed',
+      source: 'test_fixture',
+      sourceReference: 'fixture-only',
       name: 'Université',
       coordinates: cataloguePlace.coordinates,
       aliases: ['ISM'],
@@ -72,12 +89,20 @@ const route: JourneyOption = {
     orderedStops: [
       {
         id: 'castor',
+        network: 'aftu_dakar',
+        qualityStatus: 'confirmed',
+        source: 'test_fixture',
+        sourceReference: 'fixture-only',
         name: 'Castor',
         coordinates: originCoordinates,
         aliases: [],
       },
       {
         id: 'university',
+        network: 'aftu_dakar',
+        qualityStatus: 'confirmed',
+        source: 'test_fixture',
+        sourceReference: 'fixture-only',
         name: 'Université',
         coordinates: cataloguePlace.coordinates,
         aliases: ['ISM'],
@@ -96,7 +121,7 @@ const route: JourneyOption = {
   verifiedAt: '2026-10-22T12:00:00.000Z',
   geometry: {
     segments: [
-      { kind: 'tata', lineNumber: '24', coordinates: [originCoordinates, cataloguePlace.coordinates] },
+    { kind: 'tata', lineNumber: '24', network: 'aftu_dakar', coordinates: [originCoordinates, cataloguePlace.coordinates] },
       { kind: 'walk', coordinates: [cataloguePlace.coordinates] },
     ],
     bounds: [-17.463, 14.696, -17.451, 14.707],
@@ -289,13 +314,13 @@ function schemaIssues(value: unknown, schemaInput: unknown, document: OpenApiDoc
   return issues;
 }
 
-async function expectDocumentedResponse(path: string, response: Response): Promise<unknown> {
+async function expectDocumentedResponse(path: string, response: Response, method: 'get' | 'post' = 'post'): Promise<unknown> {
   const document = getOpenApiDocument();
-  const operation = document.paths[path]?.post;
+  const operation = document.paths[path]?.[method];
   if (!isRecord(operation) || !isRecord(operation.responses)) {
-    throw new TypeError(`OpenAPI POST ${path} response definitions are missing`);
+    throw new TypeError(`OpenAPI ${method.toUpperCase()} ${path} response definitions are missing`);
   }
-  const responseDefinition = resolvePointer(document, `#/paths/${path.replaceAll('/', '~1')}/post/responses/${response.status}`);
+  const responseDefinition = resolvePointer(document, `#/paths/${path.replaceAll('/', '~1')}/${method}/responses/${response.status}`);
   const resolvedResponse = isRecord(responseDefinition) && typeof responseDefinition.$ref === 'string'
     ? resolvePointer(document, responseDefinition.$ref)
     : responseDefinition;
@@ -309,6 +334,22 @@ async function expectDocumentedResponse(path: string, response: Response): Promi
 }
 
 describe('OpenAPI response contracts', () => {
+  it('validates the network-scoped incomplete-stop contribution response', async () => {
+    const handler = createContributionStopsHandler({
+      loadStopRecords: async () => [{
+        id: 'FICTIF-stop-1',
+        network: 'tata_thies',
+        qualityStatus: 'incomplete',
+        source: 'FICTIF-test-source',
+      }],
+      rateLimit: { check: async () => ({ allowed: true }) },
+    });
+    const response = await handler(new Request('https://api.example.test/api/contribution-stops?network=tata_thies'));
+
+    expect(response.status).toBe(200);
+    await expectDocumentedResponse('/api/contribution-stops', response, 'get');
+  });
+
   it('validates an unambiguous place match returned by the handler', async () => {
     const handler = resolveEndpoint({
       resolvePlaces: async () => ({ kind: 'matches', places: [cataloguePlace] }),

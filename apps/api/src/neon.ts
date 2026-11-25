@@ -1,15 +1,25 @@
 import { neon } from '@neondatabase/serverless';
 import type { Coordinates } from '../../../packages/domain/src/map';
 import type { ServedPlace, TransitNetwork } from '../../../packages/domain/src/journey';
-import type { TransitDirection, TransitStop } from '../../../packages/domain/src/transit';
+import type { NetworkId, TransitDirection, TransitStop } from '../../../packages/domain/src/transit';
+import { validateTransitStopRecord, type TransitStopRecord } from '../../../packages/domain/src/transit';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
 import { withAbortTimeout } from './abort';
 
 export const publishedNetworkSql = [
   'select line_id, line_number, direction_id, direction_name,',
   'displayed_destination_label, receiver_question, verified_at,',
-  'stops, served_places, route_shape',
-  'from public.published_transit_network',
+  'stops, served_places, route_shape, network, network_name,',
+  'line_quality_status, line_source, line_source_reference',
+  'from public.published_transit_network_by_network',
+].join(' ');
+
+export const contributionStopsSql = [
+  'select id::text as id, network, quality_status as "qualityStatus",',
+  'source_code as source, source_reference as "sourceReference", name',
+  'from public.contribution_incomplete_stops',
+  'where network = $1',
+  'order by id',
 ].join(' ');
 
 interface PublishedServedPlaceRow {
@@ -33,6 +43,11 @@ export interface PublishedNetworkRow {
   stops: TransitStop[];
   served_places: PublishedServedPlaceRow[];
   route_shape?: unknown;
+  network: NetworkId;
+  network_name: string;
+  line_quality_status: 'confirmed';
+  line_source: string;
+  line_source_reference: string;
 }
 
 export interface PublishedServedPlace extends ServedPlace, Pick<PlaceCandidate, 'displayName' | 'coordinates' | 'source'> {
@@ -83,6 +98,10 @@ function isPublishedStop(value: unknown): value is TransitStop {
   return (
     isRecord(value) &&
     isNonEmptyText(value.id) &&
+    isNonEmptyText(value.network) &&
+    value.qualityStatus === 'confirmed' &&
+    isNonEmptyText(value.source) &&
+    isNonEmptyText(value.sourceReference) &&
     isNonEmptyText(value.name) &&
     isCoordinatePair(value.coordinates) &&
     isStringArray(value.aliases)
@@ -111,6 +130,11 @@ function isPublishedNetworkRow(value: unknown): value is PublishedNetworkRow {
     !isNonEmptyText(value.direction_name) ||
     !isNonEmptyText(value.displayed_destination_label) ||
     !isNonEmptyText(value.receiver_question) ||
+    !isNonEmptyText(value.network) ||
+    !isNonEmptyText(value.network_name) ||
+    value.line_quality_status !== 'confirmed' ||
+    !isNonEmptyText(value.line_source) ||
+    !isNonEmptyText(value.line_source_reference) ||
     !isValidDateText(value.verified_at) ||
     !Array.isArray(value.stops) || value.stops.length < 2 ||
     !Array.isArray(value.served_places) || value.served_places.length < 1
@@ -119,6 +143,7 @@ function isPublishedNetworkRow(value: unknown): value is PublishedNetworkRow {
   }
 
   if (!value.stops.every(isPublishedStop)) return false;
+  if (!value.stops.every((stop) => stop.network === value.network)) return false;
   const stopIds = new Set(value.stops.map((stop) => stop.id));
   if (stopIds.size !== value.stops.length) return false;
   if (!value.served_places.every(isPublishedServedPlace)) return false;
@@ -152,6 +177,10 @@ function mapPublishedNetworkRows(rows: unknown): PublishedTransitNetworkSnapshot
   const typedRows = validatePublishedNetworkRows(rows);
   const directions: TransitDirection[] = typedRows.map((row) => ({
     id: row.direction_id,
+    network: row.network,
+    networkName: row.network_name,
+    qualityStatus: row.line_quality_status,
+    source: row.line_source,
     lineNumber: row.line_number,
     directionName: row.direction_name,
     displayedDestinationLabel: row.displayed_destination_label,
@@ -210,6 +239,45 @@ export function createPublishedNetworkReader(options: {
         return mapPublishedNetworkRows(rows);
       } catch {
         throw new Error('Unable to load published transit network');
+      }
+    },
+  };
+}
+
+/** Reads only records explicitly marked incomplete for the contribution queue. */
+export function createContributionStopReader(options: {
+  connectionString?: string;
+  query?: PublishedNetworkQuery;
+  queryTimeoutMs?: number;
+} = {}) {
+  const connectionString = options.connectionString ?? process.env.DATABASE_URL_PUBLIC_API;
+  if (!connectionString?.trim()) throw new Error('DATABASE_URL_PUBLIC_API is required');
+
+  let client: ReturnType<typeof neon> | undefined;
+  if (!options.query) {
+    try {
+      client = neon(connectionString);
+    } catch {
+      throw new Error('Unable to initialize contribution stop reader');
+    }
+  }
+  const query: PublishedNetworkQuery = options.query ??
+    ((sql, params, queryOptions) => client!.query(sql, params, queryOptions) as unknown as Promise<unknown[]>);
+  const queryTimeoutMs = options.queryTimeoutMs ?? 4_000;
+
+  return {
+    async load(network: NetworkId, options: { signal?: AbortSignal } = {}): Promise<TransitStopRecord[]> {
+      try {
+        const rows = await withAbortTimeout(
+          (signal) => query(contributionStopsSql, [network], { fetchOptions: { signal } }),
+          queryTimeoutMs,
+          `Contribution stop query timeout after ${queryTimeoutMs} ms`,
+          options.signal,
+        );
+        if (!Array.isArray(rows)) throw new Error('Invalid contribution stops result');
+        return rows.map(validateTransitStopRecord);
+      } catch {
+        throw new Error('Unable to load contribution stops');
       }
     },
   };

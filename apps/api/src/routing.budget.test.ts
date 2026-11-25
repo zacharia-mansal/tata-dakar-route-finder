@@ -16,13 +16,17 @@ const destination: PlaceCandidate = {
 function makeNetwork(): TransitNetwork {
   const directions = Array.from({ length: 4 }, (_, index) => ({
     id: `direction-${index}`,
+    network: 'aftu_dakar' as const,
+    networkName: 'AFTU Dakar',
+    qualityStatus: 'confirmed' as const,
+    source: 'test_fixture',
     lineNumber: String(24 + index),
     directionName: `Castor vers Université ${index}`,
     displayedDestinationLabel: 'Université',
     receiverQuestion: 'Est-ce que ça va vers l’Université ?',
     stops: [
-      { id: `start-${index}`, name: 'Castor', coordinates: origin, aliases: [] },
-      { id: `end-${index}`, name: 'Université', coordinates: destinationCoordinates, aliases: [] },
+      { id: `start-${index}`, network: 'aftu_dakar' as const, qualityStatus: 'confirmed' as const, source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: origin, aliases: [] },
+      { id: `end-${index}`, network: 'aftu_dakar' as const, qualityStatus: 'confirmed' as const, source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: destinationCoordinates, aliases: [] },
     ],
   }));
 

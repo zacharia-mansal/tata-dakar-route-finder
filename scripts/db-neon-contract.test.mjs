@@ -30,7 +30,7 @@ describe('Neon database contract', () => {
     expect(pgTapTest).toMatch(/typname\s*=\s*'geography'[\s\S]*?nspname\s*=\s*'extensions'/i);
     expect(pgTapTest).toMatch(/::extensions\.geometry/i);
     expect(pgTapTest).toMatch(/::extensions\.geography/i);
-    expect(pgTapTest).toMatch(/public\.plan\(21\)/i);
+    expect(pgTapTest).toMatch(/public\.plan\(27\)/i);
   });
 
   it('creates pgTAP only in the test transaction, never in production migrations', () => {
@@ -43,7 +43,8 @@ describe('Neon database contract', () => {
     expect(pgTapTest).toMatch(/has_table_privilege\('tata_catalog_reader',[\s\S]*?'insert'\)/i);
     expect(pgTapTest).toMatch(/has_table_privilege\('tata_catalog_reader',[\s\S]*?'update'\)/i);
     expect(pgTapTest).toMatch(/has_table_privilege\('tata_catalog_reader',[\s\S]*?'delete'\)/i);
-    expect(pgTapTest).toMatch(/from public\.published_transit_network\)[\s\S]*?2[\s\S]*?draft, pending, or rejected/i);
+    expect(pgTapTest).toMatch(/from public\.published_transit_network_by_network\)[\s\S]*?2[\s\S]*?draft, pending, or rejected/i);
     expect(pgTapTest).toMatch(/where line_number in \('draft', 'pending', 'rejected'\)[\s\S]*?0[\s\S]*?cannot see draft, candidate, or rejected/i);
+    expect(pgTapTest).toMatch(/from public\.contribution_incomplete_stops where network = 'aftu_dakar'[\s\S]*?1[\s\S]*?explicitly incomplete stops/i);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { searchRoutes } from './routing';
 import type { TransitNetwork } from '../../../packages/domain/src/journey';
-import type { TransitDirection } from '../../../packages/domain/src/transit';
+import type { TransitDirection, TransitStop } from '../../../packages/domain/src/transit';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
 
 const originCoordinates = { lat: 14.707, lon: -17.451 };
@@ -10,10 +10,14 @@ const destination: PlaceCandidate = {
   coordinates: { lat: 14.695, lon: -17.463 }, source: 'catalogue',
 };
 
-function direction(id: string, lineNumber: string, stops: TransitDirection['stops']): TransitDirection {
+type FixtureStop = Omit<TransitStop, 'network' | 'qualityStatus' | 'source' | 'sourceReference'>;
+
+function direction(id: string, lineNumber: string, stops: FixtureStop[]): TransitDirection {
   return {
-    id, lineNumber, directionName: `${lineNumber} vers Université`,
-    displayedDestinationLabel: 'Université', receiverQuestion: 'Est-ce que ça va vers l’Université ?', stops,
+    id, network: 'aftu_dakar', networkName: 'AFTU Dakar', qualityStatus: 'confirmed', source: 'test_fixture',
+    lineNumber, directionName: `${lineNumber} vers Université`,
+    displayedDestinationLabel: 'Université', receiverQuestion: 'Est-ce que ça va vers l’Université ?',
+    stops: stops.map((stop) => ({ ...stop, network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only' })),
   };
 }
 

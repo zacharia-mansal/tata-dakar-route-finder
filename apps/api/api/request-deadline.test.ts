@@ -14,8 +14,8 @@ const destination: PlaceCandidate = {
 };
 
 const snapshot: PublishedTransitNetworkSnapshot = {
-  directions: [],
-  stops: [],
+  directions: [{ id: 'direction-24-out', network: 'aftu_dakar', networkName: 'AFTU Dakar', qualityStatus: 'confirmed', source: 'test_fixture', lineNumber: '24', directionName: 'Fixture direction', displayedDestinationLabel: 'Fixture', receiverQuestion: 'Fixture', stops: [{ id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Fixture stop', coordinates: { lat: 14.69, lon: -17.44 }, aliases: [] }] }],
+  stops: [{ id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Fixture stop', coordinates: { lat: 14.69, lon: -17.44 }, aliases: [] }],
   servedPlaces: [{
     ...destination,
     placeId: destination.id,

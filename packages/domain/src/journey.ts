@@ -1,6 +1,6 @@
 import { assertCoordinates, type Coordinates, type JourneyGeometry } from './map';
 import type { PlaceCandidate } from './place';
-import type { TransitDirection, TransitStop } from './transit';
+import type { NetworkId, TransitDirection, TransitStop } from './transit';
 
 export interface ServedPlace {
   placeId: string;
@@ -18,6 +18,8 @@ export interface WalkSegment {
 
 export interface TransitLeg {
   directionId: string;
+  network: NetworkId;
+  networkName: string;
   lineNumber: string;
   directionName: string;
   boardingStop: TransitStop;

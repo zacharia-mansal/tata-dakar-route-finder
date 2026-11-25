@@ -2,6 +2,7 @@ import { findJourneys, type RouteSearchInput, type SearchLimits } from '../../..
 import type { JourneyGeometry, JourneySegment } from '../../../packages/domain/src/map';
 import type { JourneyOption, TransitNetwork, WalkSegment } from '../../../packages/domain/src/journey';
 import type { PlaceCandidate } from '../../../packages/domain/src/place';
+import type { NetworkId } from '../../../packages/domain/src/transit';
 import { withAbortTimeout } from './abort';
 
 export interface WalkingRouteRequest {
@@ -237,6 +238,7 @@ function geometryForRoutedJourney(
     segments.push({
       kind: 'tata',
       lineNumber: leg.lineNumber,
+      network: leg.network,
       coordinates: leg.orderedStops.map((stop) => stop.coordinates),
     });
   }
@@ -314,6 +316,7 @@ function combineReason(
  */
 export async function searchRoutesWithMetadata(options: {
   network: TransitNetwork;
+  networkId?: NetworkId;
   origin: RouteSearchInput['origin'];
   destination: PlaceCandidate;
   locale: 'fr' | 'en';
@@ -326,6 +329,7 @@ export async function searchRoutesWithMetadata(options: {
   const maxExternalCalls = walkingCallLimit(options.maxExternalCallsPerRequest);
 
   const input: RouteSearchInput = {
+    network: options.networkId ?? options.network.directions[0]?.network ?? 'aftu_dakar',
     origin: options.origin,
     destination: options.destination,
     locale: options.locale,
