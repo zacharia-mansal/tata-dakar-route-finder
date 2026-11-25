@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { BottomNav, FigmaIcon, Phone } from '@/components/yoonu'
-import { useAction } from '@/lib/actions'
-import type { ContributionNetwork, ContributionStopSummary } from '@/lib/transit-api'
-import { listContributionTransitStops } from '@/server/transit'
-import { submitContribution } from '@/server/yoonu'
+import { BottomNav, FigmaIcon, Phone } from '../components/yoonu'
+import { useAction } from '../lib/actions'
+import type { ContributionNetwork, ContributionStopSummary } from '../lib/transit-api'
+import { listContributionTransitStops } from '../server/transit'
+import { submitContribution } from '../server/yoonu'
 
 export const Route = createFileRoute('/contribuer')({ component: Contribuer })
 
@@ -13,7 +13,7 @@ const NETWORKS: { id: ContributionNetwork; label: string }[] = [
   { id: 'tata_thies', label: 'Tata Thiès' },
 ]
 
-function Contribuer() {
+export function Contribuer() {
   const [network, setNetwork] = useState<ContributionNetwork>('aftu_dakar')
   const [stops, setStops] = useState<ContributionStopSummary[]>([])
   const [selectedStopId, setSelectedStopId] = useState('')
