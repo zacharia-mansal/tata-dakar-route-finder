@@ -1,89 +1,173 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState } from 'react'
-import { BottomNav, Phone, PrimaryButton } from '@/components/yoonu'
-import { submitContribution } from '@/server/yoonu'
+import { useEffect, useState } from 'react'
+import { BottomNav, FigmaIcon, Phone } from '@/components/yoonu'
 import { useAction } from '@/lib/actions'
+import type { ContributionNetwork, ContributionStopSummary } from '@/lib/transit-api'
+import { listContributionTransitStops } from '@/server/transit'
+import { submitContribution } from '@/server/yoonu'
 
-export const Route = createFileRoute('/contribuer')({
-  component: Contribuer,
-})
+export const Route = createFileRoute('/contribuer')({ component: Contribuer })
+
+const NETWORKS: { id: ContributionNetwork; label: string }[] = [
+  { id: 'aftu_dakar', label: 'AFTU Dakar' },
+  { id: 'tata_thies', label: 'Tata Thiès' },
+]
 
 function Contribuer() {
-  const [connected, setConnected] = useState(true)
-  const [showSignal, setShowSignal] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [ok, setOk] = useState(false)
-  const send = useAction(async () => await submitContribution({ data: { name: 'Awa', type: 'signalement', message: msg || 'Retard signalé' } }), {
-    onSuccess: () => setOk(true),
+  const [network, setNetwork] = useState<ContributionNetwork>('aftu_dakar')
+  const [stops, setStops] = useState<ContributionStopSummary[]>([])
+  const [selectedStopId, setSelectedStopId] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [retryKey, setRetryKey] = useState(0)
+  const [proposedLabel, setProposedLabel] = useState('')
+  const [details, setDetails] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setLoadError(null)
+    setSelectedStopId('')
+    void listContributionTransitStops({ data: { network } }).then((result) => {
+      if (!active) return
+      if (result.ok) {
+        setStops(result.data.stops)
+        setSelectedStopId(result.data.stops[0]?.id ?? '')
+      } else {
+        setStops([])
+        setLoadError(result.message)
+      }
+    }).catch(() => {
+      if (active) {
+        setStops([])
+        setLoadError('Impossible de charger les arrêts à compléter. Vérifie ta connexion puis réessaie.')
+      }
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
+  }, [network, retryKey])
+
+  const submit = useAction(submitContribution, {
+    onSuccess: () => {
+      setSubmitted(true)
+      setProposedLabel('')
+      setDetails('')
+    },
   })
 
-  if (!connected) {
-    return (
-      <Phone>
-        <div className="flex items-center gap-3 px-5 pt-2"><Link to="/accueil">←</Link><h1 className="text-[18px] font-bold">Contribuer</h1></div>
-        <div className="bg-[#1F5EFF] px-5 py-6 text-white">
-          <h2 className="text-[22px] font-bold">Ensemble, on connaît le chemin</h2>
-          <p>Connecte-toi pour proposer et suivre tes contributions.</p>
-        </div>
-        <div className="px-5 py-6">
-          <div className="rounded-[20px] border border-[#E3E8F3] bg-white p-5 text-center">
-            <p className="font-bold">Connexion requise pour contribuer</p>
-            <p className="mt-1 text-[14px] text-[#5B6785]">On vérifie chaque info avant publication.</p>
-            <Link to="/connexion" className="mt-3 flex h-14 items-center justify-center rounded-full bg-[#1F5EFF] font-semibold text-white">Se connecter</Link>
-            <button onClick={() => setConnected(true)} className="mt-2 text-[13px] text-[#5B6785] underline">Voir l'aperçu connecté</button>
-          </div>
-        </div>
-        <div className="flex-1" />
-        <BottomNav active="contribuer" />
-      </Phone>
-    )
-  }
+  const selectedStop = stops.find((stop) => stop.id === selectedStopId)
+  const canSubmit = Boolean(selectedStop && proposedLabel.trim().length >= 2 && !submit.pending && !submit.uncertain)
 
   return (
     <Phone>
       <div className="flex items-center gap-3 px-5 pt-2">
-        <Link to="/accueil">←</Link><h1 className="text-[18px] font-bold">Contribuer</h1>
-        <button onClick={() => setConnected(false)} className="ml-auto text-[12px] text-[#5B6785] underline">Voir non-connecté</button>
+        <Link to="/accueil" aria-label="Retour à l’accueil"><FigmaIcon name="arrow-left" size={24} /></Link>
+        <h1 className="text-[18px] font-bold">Contribuer</h1>
       </div>
-      <div className="bg-[#1F5EFF] px-5 py-6 text-white">
-        <span className="rounded-full bg-[#F5B800] px-3 py-1 text-[13px] font-bold text-[#0F1B3D]">👥 La communauté</span>
-        <h2 className="mt-2 text-[24px] font-bold leading-tight">Ensemble, on connaît le chemin</h2>
-        <p>Un petit geste pour toi, un grand repère pour Dakar.</p>
-      </div>
-      <div className="space-y-3 px-5 py-4">
-        <div className="rounded-[20px] bg-[#E8EFFF] p-4">
-          <span className="rounded-full bg-[#FFF1D6] px-3 py-1 text-[13px] font-semibold text-[#B26A00]">Contributeur · niveau 2</span>
-          <p className="mt-2 text-[17px] font-bold">120 points validés · Merci Awa !</p>
-          <p className="text-[14px] text-[#5B6785]">Les points sont attribués uniquement après validation.</p>
-        </div>
-        <Link to="/proposer" className="flex items-center gap-3 rounded-[20px] border border-[#E3E8F3] bg-white p-4 text-[#0F1B3D]">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8EFFF] text-2xl">⊞</span>
-          <span className="flex-1"><span className="block text-[17px] font-bold">Proposer un parcours</span><span className="text-[14px] text-[#5B6785]">Partage les arrêts que tu connais.</span><span className="block text-[13px] text-[#5B6785]">Parcours → précisions sur le bus → proposition reçue</span></span><span>›</span>
-        </Link>
-        <button onClick={() => setShowSignal(!showSignal)} className="flex w-full items-center gap-3 rounded-[20px] border border-[#E3E8F3] bg-white p-4 text-left">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8EFFF] text-2xl">⚠</span>
-          <span className="flex-1"><span className="block text-[17px] font-bold">Signaler une info</span><span className="text-[14px] text-[#5B6785]">Un retard, un arrêt déplacé ou une ligne changée ?</span></span><span>›</span>
-        </button>
-        {showSignal && (
-          <div className="rounded-[20px] border border-[#1F5EFF] bg-white p-4">
-            <label className="text-[13px] font-semibold" htmlFor="sig">Ton signalement</label>
-            <textarea id="sig" value={msg} onChange={(e) => setMsg(e.target.value)} rows={3} placeholder="Ex. Tata 24 en retard de 15 min à Liberté 6" className="mt-1 w-full rounded-xl border border-[#E3E8F3] p-3 outline-none focus:border-[#1F5EFF]" />
-            <div className="mt-2"><PrimaryButton onClick={() => send.run()}> {send.pending ? 'Envoi…' : ok ? '✓ Signalement envoyé — merci !' : 'Envoyer le signalement'}</PrimaryButton></div>
-            {send.error && <p className="mt-1 text-[13px] text-red-600">{String(send.error)}</p>}
-          </div>
+      <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+        <header>
+          <h2 className="text-[22px] font-bold">Aide-nous à compléter les arrêts</h2>
+          <p className="mt-2 text-[14px] leading-6 text-[#5B6785]">
+            Choisis un réseau et un arrêt incomplet, puis propose un repère connu. Ta proposition sera relue ; elle ne rend pas l’arrêt vérifié.
+          </p>
+        </header>
+
+        <section className="rounded-[20px] border border-[#E3E8F3] bg-white p-4">
+          <label htmlFor="contribution-network" className="text-[14px] font-semibold">Réseau</label>
+          <select
+            id="contribution-network"
+            value={network}
+            onChange={(event) => setNetwork(event.target.value as ContributionNetwork)}
+            className="mt-2 min-h-12 w-full rounded-xl border border-[#E3E8F3] bg-white px-3 text-[15px]"
+          >
+            {NETWORKS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+
+          <h3 className="mt-5 text-[15px] font-bold">Arrêts à compléter</h3>
+          {loading && <p className="py-4 text-[14px] text-[#5B6785]" role="status">Chargement des arrêts…</p>}
+          {loadError && (
+            <div className="mt-3 rounded-xl border border-[#F5C518] bg-[#FFF1D6] p-3" role="alert">
+              <p className="text-[14px]">{loadError}</p>
+              <button type="button" onClick={() => setRetryKey((value) => value + 1)} className="mt-3 min-h-11 rounded-full border border-[#1F5EFF] px-4 font-semibold text-[#0B3BCC]">Réessayer</button>
+            </div>
+          )}
+          {!loading && !loadError && stops.length === 0 && (
+            <p className="mt-2 rounded-xl bg-[#F6F8FB] p-3 text-[14px] text-[#5B6785]" role="status">
+              Aucun arrêt incomplet disponible pour ce réseau pour le moment.
+            </p>
+          )}
+          {!loading && !loadError && stops.length > 0 && (
+            <div className="mt-2 space-y-2">
+              {stops.map((stop) => (
+                <label key={stop.id} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-[#E3E8F3] p-3">
+                  <input
+                    type="radio"
+                    name="incomplete-stop"
+                    value={stop.id}
+                    checked={selectedStopId === stop.id}
+                    onChange={() => { setSelectedStopId(stop.id); setSubmitted(false) }}
+                    className="h-5 w-5 accent-[#1F5EFF]"
+                  />
+                  <span className="min-w-0">
+                    <span className="block font-semibold">{stop.name?.trim() || 'Nom à compléter'}</span>
+                    <span className="block break-all text-[12px] text-[#5B6785]">Référence : {stop.id}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {!loading && !loadError && selectedStop && (
+          <form
+            className="space-y-3 rounded-[20px] border border-[#E3E8F3] bg-white p-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (!canSubmit) return
+              setSubmitted(false)
+              submit.run({ data: {
+                name: proposedLabel.trim(),
+                type: 'incomplete_stop_reference',
+                lineName: network,
+                message: `Arrêt ${selectedStop.id} — repère proposé : ${proposedLabel.trim()}${details.trim() ? ` — précision : ${details.trim()}` : ''}`,
+              } })
+            }}
+          >
+            <h3 className="text-[16px] font-bold">Proposer un repère</h3>
+            <label htmlFor="proposed-stop-label" className="block text-[14px] font-medium">Nom ou repère que tu connais</label>
+            <input
+              id="proposed-stop-label"
+              value={proposedLabel}
+              onChange={(event) => { setProposedLabel(event.target.value); setSubmitted(false); submit.clearError() }}
+              maxLength={120}
+              minLength={2}
+              required
+              className="min-h-12 w-full rounded-xl border border-[#E3E8F3] px-3 text-[15px]"
+              placeholder="Ex. un lieu connu près de l’arrêt"
+            />
+            <label htmlFor="contribution-details" className="block text-[14px] font-medium">Précision (facultatif)</label>
+            <textarea
+              id="contribution-details"
+              value={details}
+              onChange={(event) => { setDetails(event.target.value); setSubmitted(false); submit.clearError() }}
+              maxLength={1000}
+              rows={3}
+              className="w-full rounded-xl border border-[#E3E8F3] px-3 py-2 text-[15px]"
+              placeholder="Ajoute un détail utile, sans coordonnées personnelles."
+            />
+            <button type="submit" disabled={!canSubmit} className="min-h-12 w-full rounded-full bg-[#1F5EFF] px-5 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">
+              {submit.pending ? 'Envoi…' : 'Envoyer la proposition'}
+            </button>
+            {submit.error && <p className="text-[14px] text-[#D92D3A]" role="alert">{submit.error}</p>}
+            {submitted && <p className="text-[14px] font-medium text-[#12A150]" role="status">Proposition reçue. L’arrêt reste incomplet jusqu’à sa vérification.</p>}
+          </form>
         )}
-        <div className="flex items-center gap-3 rounded-[20px] border border-[#E3E8F3] bg-white p-4 text-[#0F1B3D]">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8EFFF] text-2xl">🚌</span>
-          <span className="flex-1"><span className="block text-[17px] font-bold">Aider à bord</span><span className="text-[14px] text-[#5B6785]">Partage ce que tu observes pendant ton trajet.</span><span className="mt-1 inline-block rounded-full bg-[#E7F5ED] px-3 py-0.5 text-[13px] font-semibold text-[#12A150]">Activé</span></span><span>›</span>
-        </div>
-        <Link to="/profil" className="flex items-center gap-3 rounded-[20px] border border-[#E3E8F3] bg-white p-4 text-[#0F1B3D]">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E8EFFF] text-2xl">☰</span>
-          <span className="flex-1"><span className="block text-[17px] font-bold">Mes contributions</span><span className="text-[14px] text-[#5B6785]">120 points · consulte tes statuts dans Profil</span></span><span>›</span>
-        </Link>
-        <div className="rounded-[20px] border border-[#F5B800] bg-[#FFFBEB] p-4">
-          <p className="text-[15px] font-medium">◼ Chaque information est vérifiée avant publication. Merci de prendre soin du trajet des autres.</p>
-        </div>
-        <Link to="/info" className="block text-center text-[13px] font-semibold text-[#0B3BCC] underline">D'où vient cette info ?</Link>
+
+        <p className="text-[12px] leading-5 text-[#5B6785]">
+          Les propositions sont enregistrées pour examen. Elles ne sont pas ajoutées automatiquement aux trajets proposés aux voyageurs.
+        </p>
       </div>
       <BottomNav active="contribuer" />
     </Phone>

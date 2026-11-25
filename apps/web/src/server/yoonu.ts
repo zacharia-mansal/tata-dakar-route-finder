@@ -1,52 +1,9 @@
 import { createServerFn } from '@tanstack/react-start'
 import { getDb } from '@/lib/db'
-import { busLines, busStops, contributions, otpCodes, places, savedItems } from '@/db/schema'
-import { and, eq, like, or } from 'drizzle-orm'
+import { contributions, otpCodes, savedItems } from '@/db/schema'
+import { and, eq } from 'drizzle-orm'
 import { sendEmail } from '@/lib/email'
 import { currentUser } from '@/lib/session.server'
-
-export const searchPlaces = createServerFn({ method: 'GET' })
-  .validator((q: string) => q)
-  .handler(async ({ data: q }) => {
-    const db = await getDb()
-    const query = q.trim().toLowerCase()
-    if (!query) {
-      return await db.select().from(places).limit(8)
-    }
-    return await db
-      .select()
-      .from(places)
-      .where(or(like(places.name, `%${q}%`), like(places.area, `%${q}%`)))
-      .limit(8)
-  })
-
-export const getHomeData = createServerFn({ method: 'GET' }).handler(async () => {
-  const db = await getDb()
-  const allPlaces = await db.select().from(places).limit(12)
-  const lines = await db.select().from(busLines)
-  const stops = await db.select().from(busStops)
-  return { places: allPlaces, lines, stops }
-})
-
-export const getItinerary = createServerFn({ method: 'GET' })
-  .validator((d: { from: string; to: string }) => d)
-  .handler(async ({ data }) => {
-    const db = await getDb()
-    const lines = await db.select().from(busLines)
-    const stops = await db.select().from(busStops)
-    const line = lines.find((l) => l.id === 'tata24') ?? lines[0]
-    const lineStops = stops.filter((s) => s.lineId === line.id).sort((a, b) => a.order - b.order)
-    return {
-      from: data.from || 'Castor',
-      to: data.to || 'ISM Dakar',
-      line,
-      stops: lineStops,
-      totalMin: 27,
-      walkStart: 6,
-      busMin: 18,
-      walkEnd: 3,
-    }
-  })
 
 export const listSaved = createServerFn({ method: 'GET' })
   .validator((deviceId: string) => deviceId)
@@ -127,8 +84,9 @@ export const requestOtp = createServerFn({ method: 'POST' })
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: 'Entre un email valide.' as const }
     const code = String(Math.floor(100000 + Math.random() * 900000))
     const db = await getDb()
+    const id = crypto.randomUUID()
     await db.insert(otpCodes).values({
-      id: crypto.randomUUID(),
+      id,
       email,
       code,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
@@ -143,9 +101,10 @@ export const requestOtp = createServerFn({ method: 'POST' })
         html: `<p>Ton code de connexion <strong>Yoonu Bus</strong> :</p><p style="font-size:28px;font-weight:700;letter-spacing:4px">${code}</p><p>Il expire dans 10 minutes.</p>`,
       })
     } catch {
-      // en preview sans email, on renvoie le code pour tester
+      await db.delete(otpCodes).where(eq(otpCodes.id, id)).catch(() => undefined)
+      return { error: 'Impossible d’envoyer le code pour le moment.' as const }
     }
-    return { ok: true as const, debugCode: code }
+    return { ok: true as const }
   })
 
 export const verifyOtp = createServerFn({ method: 'POST' })

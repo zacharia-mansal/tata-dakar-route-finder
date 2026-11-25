@@ -54,8 +54,8 @@ export const seo: SeoConfig = {
   "pages": [
     {
       "path": "/",
-      "title": "Bienvenue",
-      "description": "Onboarding Yoonu Bus : départ, bus et suivi GPS."
+      "title": "Accueil",
+      "description": "Recherche de trajets en bus vérifiés à Dakar."
     },
     {
       "path": "/accueil",
@@ -64,8 +64,8 @@ export const seo: SeoConfig = {
     },
     {
       "path": "/arret",
-      "title": "Arrêt Université",
-      "description": "Arrêt Université, infos et lieux autour."
+      "title": "Détail d’un arrêt",
+      "description": "Consulte les arrêts retournés par une recherche de trajet."
     },
     {
       "path": "/connexion",
@@ -75,12 +75,12 @@ export const seo: SeoConfig = {
     {
       "path": "/contribuer",
       "title": "Contribuer",
-      "description": "Propose un parcours et aide Dakar à mieux voyager."
+      "description": "Les contributions de transport seront bientôt disponibles."
     },
     {
       "path": "/enregistres",
       "title": "Enregistrés",
-      "description": "Tes trajets, lignes et arrêts disponibles hors-ligne."
+      "description": "Tes éléments enregistrés. Le téléchargement hors ligne n’est pas encore disponible."
     },
     {
       "path": "/fin-trajet"
@@ -96,12 +96,12 @@ export const seo: SeoConfig = {
     {
       "path": "/itineraire",
       "title": "Ton bus",
-      "description": "Ton itinéraire Tata 24 direct vers Université."
+      "description": "Résultats de recherche de trajets fournis par Yoonu Bus."
     },
     {
       "path": "/ligne",
-      "title": "Ligne Tata 24",
-      "description": "Tata 24 aller et retour, arrêts et horaires."
+      "title": "Détail d’une ligne",
+      "description": "Consulte les lignes retournées dans les résultats de recherche."
     },
     {
       "path": "/llms.txt"
@@ -112,17 +112,17 @@ export const seo: SeoConfig = {
     {
       "path": "/parcours",
       "title": "Parcours et arrêts",
-      "description": "Parcours détaillé, arrêts et carte du trajet."
+      "description": "Détail des arrêts retournés par une recherche vérifiée."
     },
     {
       "path": "/partage",
       "title": "Partager",
-      "description": "Partage ton trajet à un proche."
+      "description": "Le partage sera disponible depuis un trajet retourné par le service."
     },
     {
       "path": "/profil",
       "title": "Profil",
-      "description": "Tes contributions, points et statut."
+      "description": "Ton profil et les contributions réellement enregistrées."
     },
     {
       "path": "/proposer",

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Phone, PrimaryButton } from '@/components/yoonu'
+import { FigmaIcon, Phone, PrimaryButton } from '@/components/yoonu'
 import { requestOtp, verifyOtp } from '@/server/yoonu'
 import { useAction } from '@/lib/actions'
 import { authClient } from '@/lib/auth-client'
@@ -14,15 +14,13 @@ function Connexion() {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [step, setStep] = useState<'email' | 'code'>('email')
-  const [debugCode, setDebugCode] = useState<string | null>(null)
-
   const ask = useAction(
     async () => {
       const r = await requestOtp({ data: { email } })
       if ((r as { error?: string }).error) throw new Error((r as { error: string }).error)
-      return r as { debugCode: string }
+      return r
     },
-    { onSuccess: (r) => { setDebugCode(r.debugCode); setStep('code') } },
+    { onSuccess: () => setStep('code') },
   )
   const check = useAction(
     async () => {
@@ -39,7 +37,7 @@ function Connexion() {
 
   return (
     <Phone>
-      <div className="flex items-center gap-3 px-5 pt-2"><Link to="/contribuer">←</Link><h1 className="text-[17px] font-bold">Connexion pour contribuer</h1></div>
+      <div className="flex items-center gap-3 px-5 pt-2"><Link to="/contribuer" aria-label="Retour à la contribution"><FigmaIcon name="arrow-left" size={24} /></Link><h1 className="text-[17px] font-bold">Connexion pour contribuer</h1></div>
       <div className="px-6 pt-6">
         <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#E8EFFF] text-2xl">👤</span>
         {step === 'email' ? (
@@ -55,7 +53,6 @@ function Connexion() {
           <>
             <h2 className="mt-4 text-[22px] font-bold">Entre ton code à 6 chiffres</h2>
             <p className="mt-1 text-[14px] text-[#5B6785]">Envoyé à {email}. <button className="underline" onClick={() => setStep('email')}>Modifier</button></p>
-            {debugCode && <p className="mt-2 rounded-xl bg-[#FFF8EC] p-2 text-center text-[13px]">Code démo (email non configuré) : <strong className="tracking-[3px]">{debugCode}</strong></p>}
             <label htmlFor="code" className="mt-4 block text-[13px] font-semibold">Code</label>
             <input id="code" inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder="------" className="mt-1 w-full rounded-xl border border-[#E3E8F3] bg-white p-3 text-center text-[22px] font-bold tracking-[6px] outline-none focus:border-[#1F5EFF]" />
             <div className="mt-4"><PrimaryButton onClick={() => check.run()}> {check.pending ? 'Vérification…' : 'Valider'}</PrimaryButton></div>
