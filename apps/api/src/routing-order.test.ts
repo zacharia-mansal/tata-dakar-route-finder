@@ -17,13 +17,17 @@ function makeNetwork(): TransitNetwork {
   const directionIds = ['route-z', 'route-a'];
   const directions = directionIds.map((id) => ({
     id,
+    network: 'aftu_dakar' as const,
+    networkName: 'AFTU Dakar',
+    qualityStatus: 'confirmed' as const,
+    source: 'test_fixture',
     lineNumber: '24',
     directionName: 'Castor vers Université',
     displayedDestinationLabel: 'Université',
     receiverQuestion: 'Est-ce que ça va vers l’Université ?',
     stops: [
-      { id: `${id}-start`, name: 'Castor', coordinates: origin, aliases: [] },
-      { id: `${id}-end`, name: 'Université', coordinates: destinationCoordinates, aliases: [] },
+      { id: `${id}-start`, network: 'aftu_dakar' as const, qualityStatus: 'confirmed' as const, source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: origin, aliases: [] },
+      { id: `${id}-end`, network: 'aftu_dakar' as const, qualityStatus: 'confirmed' as const, source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: destinationCoordinates, aliases: [] },
     ],
   }));
 

@@ -1,0 +1,3 @@
+BETTER_AUTH_SECRET=change-me-to-a-long-random-string
+# Configure this public HTTPS origin to the deployed apps/api service for live transit search.
+# TATA_TRANSIT_API_BASE_URL=

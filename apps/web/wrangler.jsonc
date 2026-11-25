@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yoonu-bus",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "@tanstack/react-start/server-entry",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yoonu-bus-db",
+      "database_id": "6a4d05c3-72d4-4b20-bf2e-b63ef696906c",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

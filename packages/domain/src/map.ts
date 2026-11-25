@@ -5,7 +5,7 @@ export interface Coordinates {
 
 export type JourneySegment =
   | { kind: 'walk'; coordinates: Coordinates[] }
-  | { kind: 'tata'; coordinates: Coordinates[]; lineNumber: string };
+  | { kind: 'tata'; coordinates: Coordinates[]; lineNumber: string; network: string };
 
 export interface JourneyGeometry {
   segments: JourneySegment[];

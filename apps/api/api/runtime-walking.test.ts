@@ -15,18 +15,22 @@ const destination: PlaceCandidate = {
 const snapshot: PublishedTransitNetworkSnapshot = {
   directions: [{
     id: 'direction-24-out',
+    network: 'aftu_dakar',
+    networkName: 'AFTU Dakar',
+    qualityStatus: 'confirmed',
+    source: 'test_fixture',
     lineNumber: '24',
     directionName: 'Castor vers Université',
     displayedDestinationLabel: 'Université',
     receiverQuestion: 'Est-ce que ça va vers l’Université ?',
     stops: [
-      { id: 'castor', name: 'Castor', coordinates: originCoordinates, aliases: [] },
-      { id: 'university', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
+      { id: 'castor', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: originCoordinates, aliases: [] },
+      { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
     ],
   }],
   stops: [
-    { id: 'castor', name: 'Castor', coordinates: originCoordinates, aliases: [] },
-    { id: 'university', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
+    { id: 'castor', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: originCoordinates, aliases: [] },
+    { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
   ],
   servedPlaces: [{
     ...destination,
@@ -52,6 +56,7 @@ function request(): Request {
     body: JSON.stringify({
       origin: { kind: 'coordinates', coordinates: originCoordinates },
       destination: { source: 'catalogue', id: destination.id },
+      network: 'aftu_dakar',
       locale: 'fr',
     }),
   });

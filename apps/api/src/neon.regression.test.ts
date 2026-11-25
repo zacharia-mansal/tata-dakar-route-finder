@@ -17,9 +17,14 @@ const fixtureRows = [{
   displayed_destination_label: 'Université',
   receiver_question: 'Est-ce que ça va vers l’Université ?',
   verified_at: '2026-10-22T12:00:00.000Z',
+  network: 'aftu_dakar',
+  network_name: 'AFTU Dakar',
+  line_quality_status: 'confirmed',
+  line_source: 'test_fixture',
+  line_source_reference: 'fixture-only',
   stops: [
-    { id: 'castor', name: 'Castor', coordinates: { lat: 14.707, lon: -17.451 }, aliases: [] },
-    { id: 'university', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
+    { id: 'castor', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: { lat: 14.707, lon: -17.451 }, aliases: [] },
+    { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
   ],
   served_places: [{
     place_id: 'ism',
@@ -75,7 +80,7 @@ describe('published network Neon HTTP regressions', () => {
     await reader.load();
 
     expect(neonHarness.query.mock.calls[0]?.[0]).toBe(publishedNetworkSql);
-    expect(publishedNetworkSql).toMatch(/from\s+public\.published_transit_network/i);
+    expect(publishedNetworkSql).toMatch(/from\s+public\.published_transit_network_by_network/i);
   });
 
   it('passes the caller AbortSignal as Neon fetchOptions on the query', async () => {

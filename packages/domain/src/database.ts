@@ -6,7 +6,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type CatalogueStatus = 'draft' | 'candidate' | 'verified' | 'published' | 'rejected';
+export type CatalogueStatus = 'draft' | 'candidate' | 'incomplete' | 'verified' | 'published' | 'rejected';
+export type TransitNetworkId = 'aftu_dakar' | 'tata_thies' | (string & {});
+export type TransitQualityStatus = 'incomplete' | 'needs_verification' | 'confirmed';
 
 type Table<Row, Insert = Partial<Row>, Update = Partial<Row>> = {
   Row: Row;
@@ -53,17 +55,26 @@ interface AliasRow extends VerifiedRow {
 }
 
 interface TransitLineRow extends VerifiedRow {
-  line_number: string;
+  network: TransitNetworkId;
+  line_number: string | null;
   name: string | null;
+  source_code: string;
+  source_reference: string;
+  quality_status: TransitQualityStatus;
 }
 
 interface TransitStopRow extends VerifiedRow {
-  name: string;
-  location: unknown;
+  network: TransitNetworkId;
+  name: string | null;
+  location: unknown | null;
+  source_code: string;
+  source_reference: string;
+  quality_status: TransitQualityStatus;
 }
 
 interface LineDirectionRow extends VerifiedRow {
   line_id: string;
+  network: TransitNetworkId;
   direction_name: string;
   displayed_destination_label: string;
   receiver_question: string | null;
@@ -74,6 +85,7 @@ interface LineDirectionRow extends VerifiedRow {
 
 interface DirectionStopRow extends VerifiedRow {
   direction_id: string;
+  network: TransitNetworkId;
   stop_id: string;
   stop_order: number;
 }
@@ -101,6 +113,11 @@ interface PublishedDirectionRow {
   stops: Json;
   served_places: Json;
   route_shape: Json | null;
+  network: TransitNetworkId;
+  network_name: string;
+  line_quality_status: TransitQualityStatus;
+  line_source: string;
+  line_source_reference: string;
 }
 
 /** PostgreSQL schema types for the read-only published catalog surface. */
@@ -111,6 +128,7 @@ export interface Database {
       places: Table<PlaceRow>;
       place_aliases: Table<AliasRow>;
       transit_lines: Table<TransitLineRow>;
+      transit_networks: Table<{ network: TransitNetworkId; display_name: string }>;
       transit_stops: Table<TransitStopRow>;
       stop_aliases: Table<AliasRow>;
       line_directions: Table<LineDirectionRow>;
@@ -121,6 +139,10 @@ export interface Database {
     };
     Views: {
       published_transit_network: {
+        Row: PublishedDirectionRow;
+        Relationships: [];
+      };
+      published_transit_network_by_network: {
         Row: PublishedDirectionRow;
         Relationships: [];
       };

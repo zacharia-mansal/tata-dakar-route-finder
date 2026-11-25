@@ -127,6 +127,39 @@ paths:
                     partialReason: walking_service_error
         '504':
           $ref: '#/components/responses/RequestTimeout'
+  /api/contribution-stops:
+    get:
+      operationId: listContributionStops
+      summary: List incomplete stops for field contribution
+      description: >-
+        Returns only explicitly incomplete stop records for one supported network.
+        The response omits coordinates and all confirmed or merely unverified records.
+      parameters:
+        - name: network
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [aftu_dakar, tata_thies]
+      responses:
+        '200':
+          description: Incomplete stops available to the contribution experience.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContributionStops'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          description: The contribution catalogue is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceUnavailableError'
 components:
   schemas:
     Locale:
@@ -235,6 +268,13 @@ components:
       type: object
       required: [origin, destination, locale]
       properties:
+        network:
+          type: string
+          pattern: '^[a-z0-9_]{1,80}$'
+          default: aftu_dakar
+          description: >-
+            Restricts route search to one transit network. Older clients that omit
+            this field are limited to aftu_dakar.
         origin:
           oneOf:
             - $ref: '#/components/schemas/CoordinateOrigin'
@@ -311,7 +351,7 @@ components:
         - $ref: '#/components/schemas/PublishedPlaceCandidate'
     TransitStop:
       type: object
-      required: [id, name, coordinates, aliases]
+      required: [id, name, coordinates, aliases, network, qualityStatus, source, sourceReference]
       properties:
         id:
           type: string
@@ -325,6 +365,18 @@ components:
           type: array
           items:
             type: string
+        network:
+          type: string
+          minLength: 1
+        qualityStatus:
+          type: string
+          enum: [confirmed]
+        source:
+          type: string
+          minLength: 1
+        sourceReference:
+          type: string
+          minLength: 1
       additionalProperties: false
     WalkSegment:
       type: object
@@ -346,9 +398,15 @@ components:
     TransitLeg:
       type: object
       required:
-        [directionId, lineNumber, directionName, boardingStop, alightingStop, orderedStops, displayedDestinationLabel, receiverQuestion]
+        [directionId, network, networkName, lineNumber, directionName, boardingStop, alightingStop, orderedStops, displayedDestinationLabel, receiverQuestion]
       properties:
         directionId:
+          type: string
+          minLength: 1
+        network:
+          type: string
+          minLength: 1
+        networkName:
           type: string
           minLength: 1
         lineNumber:
@@ -373,7 +431,7 @@ components:
         receiverQuestion:
           type: string
           minLength: 1
-          description: Localized question the passenger can ask the bus receiver.
+          description: Phrase the passenger says to the bus receiver; it is not necessarily a question.
         walkBefore:
           $ref: '#/components/schemas/WalkSegment'
       additionalProperties: false
@@ -390,7 +448,7 @@ components:
                 $ref: '#/components/schemas/Coordinates'
           additionalProperties: false
         - type: object
-          required: [kind, coordinates, lineNumber]
+          required: [kind, coordinates, lineNumber, network]
           properties:
             kind:
               const: tata
@@ -399,6 +457,9 @@ components:
               items:
                 $ref: '#/components/schemas/Coordinates'
             lineNumber:
+              type: string
+              minLength: 1
+            network:
               type: string
               minLength: 1
           additionalProperties: false
@@ -522,6 +583,36 @@ components:
         kind:
           const: no_verified_journey
       additionalProperties: false
+    ContributionStops:
+      type: object
+      required: [kind, network, stops]
+      properties:
+        kind:
+          const: contribution_stops
+        network:
+          type: string
+          enum: [aftu_dakar, tata_thies]
+        stops:
+          type: array
+          items:
+            $ref: '#/components/schemas/IncompleteStopSummary'
+      additionalProperties: false
+    IncompleteStopSummary:
+      type: object
+      required: [id, network, qualityStatus]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        network:
+          type: string
+          enum: [aftu_dakar, tata_thies]
+        qualityStatus:
+          const: incomplete
+        name:
+          type: [string, 'null']
+          minLength: 1
+      additionalProperties: false
     ErrorBody:
       type: object
       required: [error, message]
@@ -607,7 +698,7 @@ components:
         message:
           type: string
           enum:
-            [La recherche de lieux est temporairement indisponible., Place search is temporarily unavailable., La recherche d’itinéraire est temporairement indisponible., Route search is temporarily unavailable.]
+            [La recherche de lieux est temporairement indisponible., Place search is temporarily unavailable., La recherche d’itinéraire est temporairement indisponible., Route search is temporarily unavailable., La liste de contribution est temporairement indisponible., The contribution list is temporarily unavailable.]
       additionalProperties: false
     PartialSearchError:
       type: object

@@ -1,9 +1,10 @@
 import type { JourneyOption, ServedPlace, TransitNetwork, TransitLeg, WalkSegment } from './journey';
 import type { PlaceCandidate } from './place';
 import type { Coordinates, JourneyGeometry, JourneySegment } from './map';
-import type { TransitDirection, TransitStop } from './transit';
+import type { NetworkId, TransitDirection, TransitStop } from './transit';
 
 export interface RouteSearchInput {
+  network: NetworkId;
   origin: { kind: 'coordinates'; coordinates: Coordinates } | PlaceCandidate;
   destination: PlaceCandidate;
   locale: 'fr' | 'en';
@@ -61,6 +62,8 @@ function makeLeg(
   const orderedStops = direction.stops.slice(startIndex, endIndex + 1);
   return {
     directionId: direction.id,
+    network: direction.network,
+    networkName: direction.networkName,
     lineNumber: direction.lineNumber,
     directionName: direction.directionName,
     boardingStop: orderedStops[0],
@@ -89,6 +92,7 @@ function geometryFor(
     segments.push({
       kind: 'tata',
       lineNumber: leg.lineNumber,
+      network: leg.network,
       coordinates: leg.orderedStops.map((stop) => stop.coordinates),
     });
   }
@@ -145,6 +149,13 @@ export function findJourneys(
 ): JourneyOption[] {
   const originCoordinates = coordinatesOfOrigin(input.origin);
   const options: JourneyOption[] = [];
+  const routableDirections = network.directions.filter((direction) =>
+    direction.network === input.network &&
+    direction.qualityStatus === 'confirmed' &&
+    direction.stops.every((stop) =>
+      stop.network === input.network && stop.qualityStatus === 'confirmed'
+    ),
+  );
 
   const explore = (state: RouteState): void => {
     const currentStops = state.direction.stops;
@@ -166,7 +177,7 @@ export function findJourneys(
     if (state.transferCount >= limits.maxTransfers) return;
     for (let exitIndex = state.startIndex + 1; exitIndex < currentStops.length; exitIndex += 1) {
       const exitStop = currentStops[exitIndex];
-      for (const nextDirection of network.directions) {
+      for (const nextDirection of routableDirections) {
         if (state.usedDirectionIds.has(nextDirection.id)) continue;
         for (let nextStartIndex = 0; nextStartIndex < nextDirection.stops.length - 1; nextStartIndex += 1) {
           const nextBoarding = nextDirection.stops[nextStartIndex];
@@ -189,7 +200,7 @@ export function findJourneys(
     }
   };
 
-  for (const direction of network.directions) {
+  for (const direction of routableDirections) {
     for (let startIndex = 0; startIndex < direction.stops.length - 1; startIndex += 1) {
       const originWalk = makeWalk(originCoordinates, direction.stops[startIndex].coordinates, input.locale);
       if (originWalk.distanceMeters > limits.maxOriginWalkMeters) continue;

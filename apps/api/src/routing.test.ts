@@ -15,13 +15,17 @@ const destination: PlaceCandidate = {
 
 const direction: TransitDirection = {
   id: '24-to-university',
+  network: 'aftu_dakar',
+  networkName: 'AFTU Dakar',
+  qualityStatus: 'confirmed',
+  source: 'test_fixture',
   lineNumber: '24',
   directionName: 'Castor vers Université',
   displayedDestinationLabel: 'Université',
   receiverQuestion: 'Est-ce que ça va vers l’Université ?',
   stops: [
-    { id: 'castor', name: 'Castor', coordinates: { lat: 14.707, lon: -17.451 }, aliases: [] },
-    { id: 'university', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
+    { id: 'castor', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Castor', coordinates: { lat: 14.707, lon: -17.451 }, aliases: [] },
+    { id: 'university', network: 'aftu_dakar', qualityStatus: 'confirmed', source: 'test_fixture', sourceReference: 'fixture-only', name: 'Université', coordinates: { lat: 14.693, lon: -17.463 }, aliases: [] },
   ],
 };
 const servedPlace: ServedPlace = {

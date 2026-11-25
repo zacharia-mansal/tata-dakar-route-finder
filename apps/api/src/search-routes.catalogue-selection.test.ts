@@ -22,12 +22,20 @@ type TestDependencies = Omit<HandlerDependencies, 'loadPublishedSnapshot' | 'res
 const coordinates: Coordinates = { lat: 14.696, lon: -17.463 };
 const university: TransitStop = {
   id: 'university',
+  network: 'aftu_dakar',
+  qualityStatus: 'confirmed',
+  source: 'test_fixture',
+  sourceReference: 'fixture-only',
   name: 'Université',
   coordinates,
   aliases: [],
 };
 const direction: TransitDirection = {
   id: 'direction-24-out',
+  network: 'aftu_dakar',
+  networkName: 'AFTU Dakar',
+  qualityStatus: 'confirmed',
+  source: 'test_fixture',
   lineNumber: '24',
   directionName: 'Castor vers Université',
   displayedDestinationLabel: 'Université',
@@ -263,6 +271,88 @@ describe('selected catalogue place security contract', () => {
 });
 
 describe('selected geocoder place validation and matching contract', () => {
+  it('filters equal line numbers to the requested network before routing', async () => {
+    const tataStop: TransitStop = {
+      ...university,
+      id: 'fixture-tata-stop',
+      network: 'tata_thies',
+      sourceReference: 'fixture-only',
+    };
+    const tataDirection: TransitDirection = {
+      ...direction,
+      id: 'fixture-tata-direction',
+      network: 'tata_thies',
+      networkName: 'Tata Thiès',
+      stops: [tataStop],
+    };
+    const tataPlace: PublishedServedPlace = {
+      ...canonicalPlace,
+      id: 'fixture-tata-place',
+      placeId: 'fixture-tata-place',
+      directionId: tataDirection.id,
+      alightingStopId: tataStop.id,
+    };
+    const deps = dependencies({
+      directions: [direction, tataDirection],
+      stops: [university, tataStop],
+      servedPlaces: [canonicalPlace, tataPlace],
+    });
+
+    const response = await createSearchRoutesHandler(deps)(post({
+      network: 'tata_thies',
+      origin: { kind: 'coordinates', coordinates },
+      destination: { source: 'catalogue', id: tataPlace.id },
+      locale: 'fr',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(deps.searchRoutes).toHaveBeenCalledWith(expect.objectContaining({
+      networkId: 'tata_thies',
+      network: expect.objectContaining({
+        directions: [expect.objectContaining({ id: tataDirection.id, lineNumber: '24', network: 'tata_thies' })],
+        stops: [expect.objectContaining({ id: tataStop.id, network: 'tata_thies' })],
+        servedPlaces: [expect.objectContaining({ placeId: tataPlace.placeId, directionId: tataDirection.id })],
+      }),
+    }));
+  });
+
+  it('accepts a Tata Thiès geocoder selection outside Dakar and keeps it in that network', async () => {
+    const thiesCoordinates: Coordinates = { lat: 0.01, lon: 0.01 };
+    const thiesStop: TransitStop = {
+      ...university,
+      id: 'fixture-thies-stop',
+      network: 'tata_thies',
+      name: 'FICTIF-arrêt Thiès',
+      coordinates: thiesCoordinates,
+    };
+    const thiesDirection: TransitDirection = {
+      ...direction,
+      id: 'fixture-thies-direction',
+      network: 'tata_thies',
+      networkName: 'Tata Thiès',
+      stops: [thiesStop],
+    };
+    const thiesPlace: PublishedServedPlace = {
+      ...canonicalPlace,
+      id: 'fixture-thies-place',
+      placeId: 'fixture-thies-place',
+      directionId: thiesDirection.id,
+      alightingStopId: thiesStop.id,
+      coordinates: thiesCoordinates,
+    };
+    const deps = dependencies({ directions: [thiesDirection], stops: [thiesStop], servedPlaces: [thiesPlace] });
+
+    const response = await createSearchRoutesHandler(deps)(post({
+      network: 'tata_thies',
+      origin: { source: 'geocoder', coordinates: { lat: 0.011, lon: 0.01 }, displayName: 'FICTIF-origine' },
+      destination: { source: 'catalogue', id: thiesPlace.id },
+      locale: 'fr',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(deps.searchRoutes).toHaveBeenCalledWith(expect.objectContaining({ networkId: 'tata_thies' }));
+  });
+
   const geocodedCoordinates: Coordinates = { lat: 14.7, lon: -17.4 };
 
   it.each([
