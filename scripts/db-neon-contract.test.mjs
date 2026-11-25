@@ -33,6 +33,12 @@ describe('Neon database contract', () => {
     expect(pgTapTest).toMatch(/public\.plan\(27\)/i);
   });
 
+  it('marks the published line fixture confirmed for the network quality constraint', () => {
+    expect(pgTapTest).toMatch(
+      /insert into public\.transit_lines\s*\([\s\S]*?quality_status\s*\) values\s*\([\s\S]*?'aftu_dakar',\s*'24',\s*'published',[\s\S]*?now\(\),\s*'confirmed'\)/i,
+    );
+  });
+
   it('creates pgTAP only in the test transaction, never in production migrations', () => {
     expect(pgTapTest).toMatch(/create extension if not exists pgtap/i);
     expect(`${catalogMigration}\n${accessMigration}`).not.toMatch(/create extension[^;]*pgtap/i);

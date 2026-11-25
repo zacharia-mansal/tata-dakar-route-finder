@@ -52,12 +52,12 @@ insert into public.place_aliases (
 );
 
 insert into public.transit_lines (
-  id, network, line_number, status, verification_source_id, verified_at
+  id, network, line_number, status, verification_source_id, verified_at, quality_status
 ) values
-  ('50000000-0000-0000-0000-000000000001', 'aftu_dakar', '24', 'published', '10000000-0000-0000-0000-000000000002', now()),
-  ('50000000-0000-0000-0000-000000000002', 'legacy_unclassified', 'draft', 'draft', null, null),
-  ('50000000-0000-0000-0000-000000000003', 'legacy_unclassified', 'pending', 'candidate', null, null),
-  ('50000000-0000-0000-0000-000000000004', 'legacy_unclassified', 'rejected', 'rejected', null, null);
+  ('50000000-0000-0000-0000-000000000001', 'aftu_dakar', '24', 'published', '10000000-0000-0000-0000-000000000002', now(), 'confirmed'),
+  ('50000000-0000-0000-0000-000000000002', 'legacy_unclassified', 'draft', 'draft', null, null, 'needs_verification'),
+  ('50000000-0000-0000-0000-000000000003', 'legacy_unclassified', 'pending', 'candidate', null, null, 'needs_verification'),
+  ('50000000-0000-0000-0000-000000000004', 'legacy_unclassified', 'rejected', 'rejected', null, null, 'needs_verification');
 
 select public.lives_ok(
   $$insert into public.transit_lines (id, network, line_number, status, quality_status)
